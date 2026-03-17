@@ -1,0 +1,172 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── PROVEEDORES ────────────────────────────────────────────────
+model Provider {
+  id           String       @id @default(cuid())
+  name         String       @unique
+  type         ProviderType
+  baseUrl      String
+  requiresAuth Boolean      @default(false)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+
+  rawListings RawListing[]
+  priceLogs   PriceLog[]
+  scrapeJobs  ScrapeJob[]
+}
+
+enum ProviderType {
+  MAYORISTA
+  MINORISTA
+}
+
+// ─── PRODUCTOS NORMALIZADOS ──────────────────────────────────────
+model Product {
+  id            String   @id @default(cuid())
+  canonicalName String
+  brand         String
+  model         String
+  category      Category
+  sku           String?  @unique
+  imageUrl      String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  rawListings RawListing[]
+  alerts      Alert[]
+}
+
+enum Category {
+  LAPTOP
+  DESKTOP
+  MONITOR
+  SMARTPHONE
+  TABLET
+  COMPONENTE
+  PERIFERICO
+  NETWORKING
+  ALMACENAMIENTO
+  OTRO
+}
+
+// ─── LISTINGS CRUDOS (por proveedor) ────────────────────────────
+model RawListing {
+  id         String   @id @default(cuid())
+  productId  String?
+  providerId String
+  rawName    String
+  price      Float
+  currency   String   @default("PEN")
+  url        String
+  inStock    Boolean  @default(true)
+  scrapedAt  DateTime @default(now())
+
+  product   Product?  @relation(fields: [productId], references: [id])
+  provider  Provider  @relation(fields: [providerId], references: [id])
+  priceLogs PriceLog[]
+
+  @@unique([providerId, url])
+}
+
+// ─── HISTORIAL DE PRECIOS ────────────────────────────────────────
+model PriceLog {
+  id         String   @id @default(cuid())
+  listingId  String
+  providerId String
+  price      Float
+  recordedAt DateTime @default(now())
+
+  listing  RawListing @relation(fields: [listingId], references: [id])
+  provider Provider   @relation(fields: [providerId], references: [id])
+}
+
+// ─── COMPARATIVAS Y ALERTAS ──────────────────────────────────────
+model Alert {
+  id             String      @id @default(cuid())
+  productId      String
+  mayoristPrice  Float
+  minoristaPrice Float
+  marginPercent  Float
+  mayoristId     String
+  minoristaId    String
+  status         AlertStatus @default(PENDING)
+  sentToTelegram Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+}
+
+enum AlertStatus {
+  PENDING
+  SENT
+  DISMISSED
+  EXPIRED
+}
+
+// ─── JOBS DE SCRAPING ────────────────────────────────────────────
+model ScrapeJob {
+  id         String    @id @default(cuid())
+  providerId String
+  status     JobStatus @default(QUEUED)
+  startedAt  DateTime?
+  finishedAt DateTime?
+  itemsFound Int       @default(0)
+  errors     String?
+  createdAt  DateTime  @default(now())
+
+  provider Provider @relation(fields: [providerId], references: [id])
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
+// ─── USUARIOS DEL PANEL ──────────────────────────────────────────
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String?
+  passwordHash   String?
+  role           UserRole @default(VIEWER)
+  telegramId     String?
+  alertThreshold Float    @default(15.0)
+  createdAt      DateTime @default(now())
+
+  wholesalerCredentials UserWholesalerCredential[]
+}
+
+enum UserRole {
+  ADMIN
+  VIEWER
+}
+
+model UserWholesalerCredential {
+  id                String                @id @default(cuid())
+  userId            String
+  provider          WholesalerProvider
+  usernameEncrypted String
+  passwordEncrypted String
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+}
+
+enum WholesalerProvider {
+  DELTRON
+  INGRAM
+  INTCOMEX
+}
