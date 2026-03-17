@@ -12,10 +12,16 @@ export const authOptions: NextAuthOptions = {
         password: { label: 'Contraseña', type: 'password' },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials.password) return null;
+        const email = credentials?.email?.trim().toLowerCase();
+        const password = credentials?.password;
+
+        if (!email || !password) {
+          console.warn('[auth] Missing email or password in credentials callback');
+          return null;
+        }
 
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
+          where: { email },
           select: {
             id: true,
             email: true,
@@ -25,8 +31,22 @@ export const authOptions: NextAuthOptions = {
           },
         });
 
-        if (!user?.passwordHash) return null;
-        if (!verifyPassword(credentials.password, user.passwordHash)) return null;
+        if (!user) {
+          console.warn(`[auth] User not found for email: ${email}`);
+          return null;
+        }
+
+        if (!user.passwordHash) {
+          console.warn(`[auth] User has no passwordHash: ${email}`);
+          return null;
+        }
+
+        const isValid = verifyPassword(password, user.passwordHash);
+
+        if (!isValid) {
+          console.warn(`[auth] Password mismatch for email: ${email}`);
+          return null;
+        }
 
         return {
           id: user.id,
