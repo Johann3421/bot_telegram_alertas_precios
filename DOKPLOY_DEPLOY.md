@@ -1,168 +1,186 @@
-# Despliegue en Dokploy con Compose
+# Despliegue en Dokploy con Docker Compose
 
-Este proyecto ya quedó preparado para desplegarse en Dokploy usando `compose.yml`, con tres servicios:
+Guía paso a paso para subir este proyecto a Dokploy desde cero.
 
-- `postgres`: base de datos PostgreSQL persistente.
-- `app`: aplicación Next.js.
-- `worker`: scheduler de scraping y comandos del bot de Telegram.
+---
 
-## Archivos usados
+## Servicios incluidos
 
-- `compose.yml`
-- `Dockerfile`
-- `docker/start-app.sh`
-- `docker/start-worker.sh`
-- `.env.dokploy.example`
+| Servicio   | Descripción |
+|------------|-------------|
+| `postgres` | PostgreSQL 16 con volumen persistente |
+| `app`      | Next.js 14 (dashboard + API) |
+| `worker`   | Scheduler de scraping + bot de Telegram |
 
-## Antes de desplegar
+---
 
-1. Sube el repositorio con estos archivos incluidos.
-2. Ten listo el dominio final que usará la app, por ejemplo `https://precios.tudominio.com`.
-3. Genera secretos largos para:
-   - `NEXTAUTH_SECRET`
-   - `CREDENTIALS_SECRET_KEY`
-   - `POSTGRES_PASSWORD`
+## Paso 0 — Antes de empezar
 
-Ejemplo para generarlos localmente:
+Necesitas tener listo:
+
+1. **El repo en GitHub/GitLab** con el código subido (rama `main`).
+2. **Tu dominio** apuntando al servidor Dokploy (ej. `precios.tudominio.com`).
+3. **Tres secretos generados.** Ejecútalos en tu terminal local, uno por uno, y guarda cada resultado:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-## Crear el proyecto en Dokploy
+Necesitas tres valores distintos para: `NEXTAUTH_SECRET`, `CREDENTIALS_SECRET_KEY` y `POSTGRES_PASSWORD`.
 
-1. En Dokploy crea un proyecto nuevo desde tu repositorio Git.
-2. Elige despliegue por `Docker Compose`.
-3. Indica como archivo principal: `compose.yml`.
-4. Configura la rama correcta, normalmente `main`.
+---
 
-## Variables de entorno
+## Paso 1 — Crear el proyecto en Dokploy
 
-Carga en Dokploy todas las variables de `.env.dokploy.example`.
+1. Inicia sesión en tu panel de Dokploy.
+2. Clic en **"Projects"** → **"Create Project"** → ponle un nombre (ej. `precios-pe`).
+3. Dentro del proyecto, clic en **"Create Service"** → elige **"Docker Compose"**.
+4. Conecta tu repositorio Git:
+   - Selecciona el proveedor (GitHub / GitLab / Gitea).
+   - Elige el repositorio del proyecto.
+   - Configura la rama: `main`.
+5. En el campo **"Compose File"** escribe: `compose.yml`
+6. Clic en **"Save"** (aún NO hagas deploy).
 
-### Variables obligatorias
+---
 
-- `POSTGRES_PASSWORD`
-- `NEXTAUTH_SECRET`
-- `NEXTAUTH_URL`
-- `CREDENTIALS_SECRET_KEY`
-- `OPENAI_API_KEY`
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_BROADCAST_CHAT_ID`
-- `TELEGRAM_BROADCAST_INVITE_URL`
-- `NEXT_PUBLIC_APP_URL`
+## Paso 2 — Configurar las variables de entorno
 
-### Variables recomendadas
+Esto es lo más importante. Un valor erróneo aquí derribará los servicios.
 
-- `POSTGRES_DB=precios_pe`
-- `POSTGRES_USER=preciospe`
-- `APP_PORT=3000`
-- `ADMIN_SEED_PASSWORD=Admin12345!`
-- `MIN_MARGIN_PERCENT=15`
-- `SCRAPE_INTERVAL_HOURS=3`
-
-### Variables de mayoristas
-
-Déjalas vacías si todavía no tienes acceso, pero si quieres scraping autenticado automático en producción define:
-
-- `DELTRON_USER`
-- `DELTRON_PASS`
-- `INGRAM_USER`
-- `INGRAM_PASS`
-- `INTCOMEX_USER`
-- `INTCOMEX_PASS`
-
-## Valores exactos que deben coincidir con tu dominio
-
-Si tu dominio final será `https://precios.tudominio.com`, entonces estas dos variables deben quedar exactamente así:
+1. En la pantalla del servicio Compose, ve a la pestaña **"Environment"**.
+2. Copia y pega el bloque completo de abajo, **reemplazando cada valor** por el tuyo.
+3. Clic en **"Save"**.
 
 ```env
+# Postgres
+POSTGRES_DB=precios_pe
+POSTGRES_USER=preciospe
+POSTGRES_PASSWORD=REEMPLAZA_CON_TU_PASSWORD_SEGURA
+
+# Puerto host para Dokploy (mapea al puerto de contenedor 3000). Cambia si tu plataforma usa otro puerto.
+APP_PORT=3005
+
+# Next.js / Auth
+# Pon aquí tu dominio real con https://, sin barra al final
 NEXTAUTH_URL=https://precios.tudominio.com
 NEXT_PUBLIC_APP_URL=https://precios.tudominio.com
+NEXTAUTH_SECRET=REEMPLAZA_CON_SECRETO_LARGO_1
+CREDENTIALS_SECRET_KEY=REEMPLAZA_CON_SECRETO_LARGO_2
+
+# Usuario administrador inicial (se crea solo en el seed)
+ADMIN_SEED_PASSWORD=Cambia123!
+
+# OpenAI (normalización IA)
+OPENAI_API_KEY=sk-...
+
+# Telegram
+TELEGRAM_BOT_TOKEN=token-del-bot
+TELEGRAM_BROADCAST_CHAT_ID=@tu_canal
+TELEGRAM_BROADCAST_INVITE_URL=https://t.me/tu_canal
+
+# Scraping
+MIN_MARGIN_PERCENT=15
+SCRAPE_INTERVAL_HOURS=3
+
+# Mayoristas (opcional, dejar vacíos si no tienes acceso)
+DELTRON_USER=
+DELTRON_PASS=
+INGRAM_USER=
+INGRAM_PASS=
+INTCOMEX_USER=
+INTCOMEX_PASS=
 ```
 
-No uses `localhost` en producción. Si dejas `localhost`, fallarán enlaces del dashboard, sesiones y botones de Telegram.
+> **Importante:** `DATABASE_URL` **no** hay que definirla. El `compose.yml` la construye automáticamente usando las variables de Postgres de arriba.
 
-## Dominio en Dokploy
+> **No uses `localhost`** en `NEXTAUTH_URL` ni `NEXT_PUBLIC_APP_URL`. Si queda `localhost`, las sesiones fallarán y el bot de Telegram enviará botones rotos.
 
-Asocia el dominio público al servicio `app`.
+---
 
-El contenedor expone el puerto interno `3000`. En el `compose.yml` ya está publicado con:
+## Paso 3 — Configurar el dominio
 
-```yaml
-ports:
-  - ${APP_PORT:-3000}:3000
-```
+1. En la pestaña **"Domains"** del servicio Compose (o en la configuración del servicio `app`), clic en **"Add Domain"**.
+2. Completa los campos:
+   - **Domain**: `precios.tudominio.com`
+   - **Service**: `app`
+   - **Port**: `3000` (puerto interno del contenedor). El mapeo al puerto público se controla con `APP_PORT` (valor por defecto `3006`).
+   - **HTTPS**: activar (Dokploy gestiona el certificado Let's Encrypt automáticamente)
+3. Clic en **"Save"**.
 
-Si Dokploy te pide puerto del servicio web, usa `3000`.
+---
 
-## Qué hace el arranque
+## Paso 4 — Ejecutar el primer deploy
 
-### Servicio `app`
+1. Ve a la pestaña **"Deployments"** del servicio Compose.
+2. Clic en **"Deploy"** (o **"Redeploy"**).
+3. Dokploy hará `docker compose up --build` en tu servidor:
+   - Construirá la imagen desde el `Dockerfile`.
+   - Levantará `postgres` primero y esperará que quede healthy.
+   - Levantará `app`: generará Prisma, sincronizará el esquema, correrá el seed, y arrancará Next.js.
+   - Levantará `worker`: generará Prisma, verificará el esquema, iniciará el scheduler y el bot.
 
-Al iniciar:
+El primer build tarda entre 3 y 8 minutos por la instalación de Playwright y las dependencias de Node.
 
-1. genera cliente Prisma,
-2. ejecuta `prisma db push`,
-3. ejecuta `prisma db seed`,
-4. levanta Next.js en `0.0.0.0:3000`.
+---
 
-### Servicio `worker`
+## Paso 5 — Verificar que funciona
 
-Al iniciar:
+Cuando el deploy termine, comprueba en orden:
 
-1. genera cliente Prisma,
-2. verifica el esquema,
-3. inicia el scheduler,
-4. lanza el bot de Telegram para `/status` y `/alertas` si hay token configurado.
+| # | Qué hacer | Resultado esperado |
+|---|-----------|-------------------|
+| 1 | Abrir `https://precios.tudominio.com/login` | Página de login visible |
+| 2 | Iniciar sesión con `admin@precios.pe` y el valor de `ADMIN_SEED_PASSWORD` | Entra al dashboard |
+| 3 | Ir a **Settings** → sección Telegram | Muestra el botón de unirse al canal |
+| 4 | Revisar logs del servicio `worker` en Dokploy | Incluye `[Worker] Iniciando scheduler...` |
+| 5 | Esperar el primer ciclo de scraping (`SCRAPE_INTERVAL_HOURS`) | El bot publica en el canal sin errores |
 
-## Primer despliegue recomendado
+---
 
-1. Configura variables.
-2. Ejecuta el deploy.
-3. Espera a que `postgres` quede healthy.
-4. Verifica que `app` quede healthy.
-5. Verifica que `worker` arranque sin errores.
+## Diagnóstico de errores comunes
 
-## Qué revisar en logs si algo falla
+### El deploy falla en el build
 
-### Si falla `app`
+- Revisa que el repo tiene `Dockerfile` y `compose.yml` en la raíz.
+- Revisa que la rama configurada sea `main` (o la correcta).
 
-Busca en logs de `app`:
+### `app` cae con error de base de datos
 
-- errores de `prisma db push`
-- error por `DATABASE_URL`
-- error por `NEXTAUTH_SECRET`
-- error por build de Next.js
+- Verifica que `POSTGRES_PASSWORD` sea exactamente el mismo valor en `POSTGRES_PASSWORD` y que el servicio `postgres` esté healthy antes de que `app` arranque (el `compose.yml` ya garantiza esto con `depends_on`).
+- Asegúrate de que no definiste una `DATABASE_URL` manual con host incorrecto. Bórrala si la pusiste.
 
-### Si falla `worker`
+### Error `NEXTAUTH_SECRET` o sesión inválida
 
-Busca en logs de `worker`:
+- Verifica que `NEXTAUTH_SECRET` no esté vacío y que `NEXTAUTH_URL` coincida exactamente con el dominio que usas en el navegador (incluyendo `https://`).
 
-- errores de credenciales mayoristas
-- errores de Playwright
-- errores del bot de Telegram
+### El bot de Telegram falla
 
-## Validaciones después del despliegue
+- Verifica que `TELEGRAM_BOT_TOKEN` sea correcto.
+- Verifica que `TELEGRAM_BROADCAST_CHAT_ID` empiece con `@` (p.ej. `@micanal`) o sea el chat id numérico con `-100...`.
+- Verifica que `TELEGRAM_BROADCAST_INVITE_URL` sea una URL pública, no `localhost`.
 
-Comprueba esto en orden:
+### `worker` falla con error de Playwright
 
-1. La página `/login` abre correctamente.
-2. Puedes iniciar sesión con `admin@precios.pe` y la contraseña de `ADMIN_SEED_PASSWORD`.
-3. El panel `settings` muestra el botón para unirse al canal.
-4. El worker inicia y programa scraping según `SCRAPE_INTERVAL_HOURS`.
-5. Telegram publica sin enlaces `localhost`.
+- Es normal en el primer arranque si los navegadores aún se están instalando. Espera unos segundos y revisa si se estabiliza.
+- Si persiste, verifica que la imagen base `mcr.microsoft.com/playwright:v1.58.2-noble` se descargó correctamente en el servidor.
 
-## Si necesitas redeploy sin errores comunes
+---
 
-- Cambiaste dominio: actualiza `NEXTAUTH_URL` y `NEXT_PUBLIC_APP_URL`.
-- Cambiaste secreto de auth: reinicia `app` y `worker`.
-- Cambiaste estructura Prisma: vuelve a desplegar; `db push` se ejecuta al arranque.
-- Cambiaste variables de Telegram o mayoristas: reinicia `app` y `worker`.
+## Redeployar después de cambios
 
-## Notas importantes
+| Cambio realizado | Acción en Dokploy |
+|------------------|-------------------|
+| Código nuevo subido a Git | Clic en "Redeploy" |
+| Cambio de dominio | Actualizar `NEXTAUTH_URL` y `NEXT_PUBLIC_APP_URL` → Redeploy |
+| Cambio de secreto de auth | Actualizar variable → Redeploy |
+| Cambio en schema Prisma | Solo Redeploy (`db push` se ejecuta automáticamente al arranque) |
+| Cambio de token de Telegram | Actualizar variable → Redeploy |
 
-- No subas `.env` al repositorio.
-- Usa solo variables cargadas en Dokploy.
-- El volumen `postgres-data` ya persiste la base de datos.
-- Si quieres separar la base de datos fuera de Dokploy, solo cambia `DATABASE_URL` y elimina el servicio `postgres` del `compose.yml`.
+---
+
+## Notas finales
+
+- **No subas `.env` al repositorio.** El `.gitignore` ya lo excluye.
+- El volumen `postgres-data` persiste la base de datos entre redeployments. Si necesitas reset total, bórralo desde Dokploy → Volumes.
+- Si usas base de datos externa (Neon, Supabase, etc.), define `DATABASE_URL` directamente con la URL externa y elimina el servicio `postgres` del `compose.yml`.
