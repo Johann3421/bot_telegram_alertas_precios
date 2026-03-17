@@ -59,7 +59,7 @@ POSTGRES_USER=preciospe
 POSTGRES_PASSWORD=REEMPLAZA_CON_TU_PASSWORD_SEGURA
 
 # Puerto host para Dokploy (mapea al puerto de contenedor 3000). Cambia si tu plataforma usa otro puerto.
-APP_PORT=3307
+APP_PORT=3308
 
 # Next.js / Auth
 # Pon aquí tu dominio real con https://, sin barra al final
@@ -104,7 +104,7 @@ INTCOMEX_PASS=
 2. Completa los campos:
    - **Domain**: `precios.tudominio.com`
    - **Service**: `app`
-   - **Port**: `3000` (puerto interno del contenedor). El mapeo al puerto público se controla con `APP_PORT` (valor por defecto `3307`).
+   - **Port**: `3000` (puerto interno del contenedor). El mapeo al puerto público se controla con `APP_PORT` (valor por defecto `3308`).
    - **HTTPS**: activar (Dokploy gestiona el certificado Let's Encrypt automáticamente)
 3. Clic en **"Save"**.
 
