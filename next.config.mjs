@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   // No cargar Playwright ni scrapers en el bundle del cliente
   webpack: (config, { isServer }) => {
     if (!isServer) {
@@ -20,6 +21,7 @@ const nextConfig = {
       { protocol: 'https', hostname: '**.coolbox.pe' },
       { protocol: 'https', hostname: '**.impacto.pe' },
       { protocol: 'https', hostname: '**.deltron.com.pe' },
+      { protocol: 'https', hostname: '**.oechsle.pe' },
     ],
   },
 };

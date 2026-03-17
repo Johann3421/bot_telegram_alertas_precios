@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "worker": "npx tsx scraper/worker.ts",
     "lint": "next lint",
     "db:push": "npx prisma db push",
     "db:seed": "npx prisma db seed",

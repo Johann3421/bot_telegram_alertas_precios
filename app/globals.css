@@ -480,6 +480,67 @@ button:disabled {
   background: #fbfcfe;
 }
 
+.settings-channel-cta {
+  min-height: 40px;
+  border: 1px solid rgba(30, 58, 95, 0.14);
+  padding: 10px 12px;
+  background: #fbfcfe;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  line-height: 1.5;
+}
+
+.settings-channel-cta a,
+.settings-link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(30, 58, 95, 0.14);
+  background: white;
+  color: var(--bg-sidebar);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+}
+
+.settings-link-button {
+  width: 100%;
+}
+
+.settings-channel-cta a:hover,
+.settings-link-button:hover {
+  background: var(--cell-hover);
+  text-decoration: none;
+}
+
+.settings-password-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.settings-password-field input {
+  width: 100%;
+}
+
+.settings-password-toggle {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(30, 58, 95, 0.14);
+  background: var(--cell-header);
+  color: var(--bg-sidebar);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .settings-credential-grid {
   display: grid;
   gap: 16px;
@@ -589,5 +650,10 @@ button:disabled {
   .auth-stat-grid,
   .settings-form-grid.two {
     grid-template-columns: 1fr;
+  }
+
+  .settings-channel-cta {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

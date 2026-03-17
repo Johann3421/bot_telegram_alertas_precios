@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
+type ProviderKey = 'DELTRON' | 'INGRAM' | 'INTCOMEX';
+
 interface CredentialFormState {
-  provider: 'DELTRON' | 'INGRAM' | 'INTCOMEX';
+  provider: ProviderKey;
   label: string;
   hint: string;
   username: string;
@@ -18,10 +20,12 @@ interface SettingsResponse {
     id: string;
     name: string | null;
     email: string;
-    telegramId: string | null;
     alertThreshold: number;
   };
   credentials: Array<Omit<CredentialFormState, 'password' | 'remove'>>;
+  broadcast: {
+    inviteUrl: string | null;
+  };
 }
 
 export default function SettingsPage() {
@@ -31,10 +35,15 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState({
     name: '',
     email: '',
-    telegramId: '',
     alertThreshold: 15,
   });
+  const [broadcastInviteUrl, setBroadcastInviteUrl] = useState<string | null>(null);
   const [credentials, setCredentials] = useState<CredentialFormState[]>([]);
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<ProviderKey, boolean>>({
+    DELTRON: false,
+    INGRAM: false,
+    INTCOMEX: false,
+  });
 
   useEffect(() => {
     let isMounted = true;
@@ -55,9 +64,9 @@ export default function SettingsPage() {
         setProfile({
           name: payload.profile.name ?? '',
           email: payload.profile.email,
-          telegramId: payload.profile.telegramId ?? '',
           alertThreshold: payload.profile.alertThreshold,
         });
+        setBroadcastInviteUrl(payload.broadcast.inviteUrl);
         setCredentials(
           payload.credentials.map((credential) => ({
             ...credential,
@@ -99,6 +108,13 @@ export default function SettingsPage() {
     );
   }
 
+  function togglePasswordVisibility(provider: ProviderKey) {
+    setVisiblePasswords((current) => ({
+      ...current,
+      [provider]: !current[provider],
+    }));
+  }
+
   async function handleSave() {
     setIsSaving(true);
     setFeedback(null);
@@ -110,7 +126,6 @@ export default function SettingsPage() {
         body: JSON.stringify({
           profile: {
             name: profile.name,
-            telegramId: profile.telegramId,
             alertThreshold: profile.alertThreshold,
           },
           credentials: credentials.map((credential) => ({
@@ -134,9 +149,9 @@ export default function SettingsPage() {
         setProfile({
           name: payload.profile.name ?? '',
           email: payload.profile.email,
-          telegramId: payload.profile.telegramId ?? '',
           alertThreshold: payload.profile.alertThreshold,
         });
+        setBroadcastInviteUrl(payload.broadcast.inviteUrl);
         setCredentials(
           payload.credentials.map((credential) => ({
             ...credential,
@@ -188,14 +203,29 @@ export default function SettingsPage() {
               <span>Umbral de alerta personal</span>
             </div>
             <div className="settings-mini-stat" style={{ borderLeftColor: 'var(--color-warning)' }}>
-              <strong>{profile.telegramId ? 'OK' : 'Pendiente'}</strong>
-              <span>Chat personal de Telegram</span>
+              <strong>{broadcastInviteUrl ? 'Activo' : 'Pendiente'}</strong>
+              <span>Canal público de Telegram</span>
             </div>
 
             <div className="credential-note">
               El scraping programado puede seguir usando `.env` como respaldo, pero el disparo
               manual del tablero ya puede trabajar con tus credenciales guardadas.
             </div>
+
+            {broadcastInviteUrl ? (
+              <a
+                className="settings-link-button"
+                href={broadcastInviteUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Unirse al canal de anuncios
+              </a>
+            ) : (
+              <div className="credential-note">
+                Define `TELEGRAM_BROADCAST_INVITE_URL` para habilitar el acceso al canal público.
+              </div>
+            )}
           </div>
         </aside>
 
@@ -242,15 +272,19 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="settings-form-field">
-                  <label htmlFor="settings-telegram">Telegram Chat ID personal</label>
-                  <input
-                    id="settings-telegram"
-                    value={profile.telegramId}
-                    onChange={(event) =>
-                      setProfile((current) => ({ ...current, telegramId: event.target.value }))
-                    }
-                    placeholder="Ej: 6912649744"
-                  />
+                  <label htmlFor="settings-channel">Canal público de Telegram</label>
+                  <div className="settings-channel-cta" id="settings-channel">
+                    <span>
+                      {broadcastInviteUrl
+                        ? 'Usa este acceso para unirte al canal y recibir los anuncios del bot.'
+                        : 'El enlace de invitación todavía no está definido en el entorno.'}
+                    </span>
+                    {broadcastInviteUrl ? (
+                      <a href={broadcastInviteUrl} target="_blank" rel="noreferrer">
+                        Unirme al canal
+                      </a>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
@@ -323,22 +357,36 @@ export default function SettingsPage() {
 
                           <div className="settings-form-field">
                             <label htmlFor={`pass-${credential.provider}`}>Contraseña</label>
-                            <input
-                              id={`pass-${credential.provider}`}
-                              type="password"
-                              value={credential.password}
-                              onChange={(event) =>
-                                updateCredential(credential.provider, {
-                                  password: event.target.value,
-                                  remove: false,
-                                })
-                              }
-                              placeholder={
-                                credential.hasPassword && !credential.remove
-                                  ? 'Dejar en blanco para conservar'
-                                  : 'Contraseña mayorista'
-                              }
-                            />
+                            <div className="settings-password-field">
+                              <input
+                                id={`pass-${credential.provider}`}
+                                type={visiblePasswords[credential.provider] ? 'text' : 'password'}
+                                value={credential.password}
+                                onChange={(event) =>
+                                  updateCredential(credential.provider, {
+                                    password: event.target.value,
+                                    remove: false,
+                                  })
+                                }
+                                placeholder={
+                                  credential.hasPassword && !credential.remove
+                                    ? 'Dejar en blanco para conservar'
+                                    : 'Contraseña mayorista'
+                                }
+                              />
+                              <button
+                                className="settings-password-toggle"
+                                type="button"
+                                onClick={() => togglePasswordVisibility(credential.provider)}
+                                aria-label={
+                                  visiblePasswords[credential.provider]
+                                    ? `Ocultar contraseña de ${credential.label}`
+                                    : `Mostrar contraseña de ${credential.label}`
+                                }
+                              >
+                                {visiblePasswords[credential.provider] ? 'Ocultar' : 'Ver'}
+                              </button>
+                            </div>
                           </div>
                         </div>
 

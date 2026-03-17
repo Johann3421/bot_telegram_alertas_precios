@@ -1,0 +1,15 @@
+.git
+.gitignore
+.next
+.venv
+coverage
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+.env.*
+!.env.example
+!.env.dokploy.example
+README.md
+DOKPLOY_DEPLOY.md
