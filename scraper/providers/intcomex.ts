@@ -180,8 +180,7 @@ export async function scrapeIntcomex(jobId: string, options?: RunAllScrapersOpti
     throw new Error('Credenciales INTCOMEX_USER/INTCOMEX_PASS no configuradas');
   }
 
-  // Usar contexto persistente para que las cookies de Azure B2C sobrevivan
-  // los redirects cross-domain (store.intcomex.com ↔ b2clogin.com)
+  // Contexto persistente: las cookies de Azure B2C sobreviven toda la cadena de redirects OAuth
   const context = await getPersistentContext('intcomex');
   const page = await context.newPage();
 

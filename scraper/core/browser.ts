@@ -1,9 +1,7 @@
 import { chromium, Browser, BrowserContext } from 'playwright';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 
-// Argumentos Chrome compartidos por todas las instancias
 const CHROME_ARGS = [
   '--no-sandbox',
   '--disable-setuid-sandbox',
@@ -14,24 +12,12 @@ const CHROME_ARGS = [
   '--disable-background-timer-throttling',
   '--disable-backgrounding-occluded-windows',
   '--disable-ipc-flooding-protection',
-  // Fix Azure B2C / portales OAuth: deshabilitar restricciones SameSite para cookies cross-origin
+  // Desactivar restricciones SameSite — necesario para cookies cross-origin (Azure B2C / Intcomex)
   '--disable-features=VizDisplayCompositor,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure',
-  '--enable-features=NetworkService,NetworkServiceLogging',
+  // Forzar HTTP/1.1 — evita ERR_HTTP2_PROTOCOL_ERROR en portales B2B que rechazan HTTP/2
+  '--disable-http2',
   '--window-size=1366,768',
 ];
-
-// Opciones del contexto compartidas
-const CONTEXT_OPTIONS = {
-  userAgent:
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-    '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  viewport: { width: 1366, height: 768 } as const,
-  locale: 'es-PE',
-  timezoneId: 'America/Lima',
-  extraHTTPHeaders: {
-    'Accept-Language': 'es-PE,es;q=0.9,en-US;q=0.8,en;q=0.7',
-  },
-};
 
 let browserInstance: Browser | null = null;
 
@@ -99,7 +85,17 @@ const STEALTH_INIT_SCRIPT = `
 `;
 
 export async function getContext(browser: Browser): Promise<BrowserContext> {
-  const context = await browser.newContext(CONTEXT_OPTIONS);
+  const context = await browser.newContext({
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    viewport: { width: 1366, height: 768 },
+    locale: 'es-PE',
+    timezoneId: 'America/Lima',
+    extraHTTPHeaders: {
+      'Accept-Language': 'es-PE,es;q=0.9,en-US;q=0.8,en;q=0.7',
+    },
+  });
 
   await context.addInitScript(STEALTH_INIT_SCRIPT);
 
@@ -107,24 +103,29 @@ export async function getContext(browser: Browser): Promise<BrowserContext> {
 }
 
 /**
- * Crea un contexto persistente con perfil en disco temporal.
- * Necesario para portales con OAuth/SSO (ej. Azure B2C) donde las cookies
- * deben sobrevivir redirecciones cross-domain en entornos Docker/VPS.
- * Retorna el contexto; al llamar context.close() se cierra también el browser subyacente.
+ * Lanza un contexto Chromium con perfil de usuario real guardado en disco.
+ * Las cookies persisten a través de redirecciones cross-origin (OAuth / Azure B2C).
+ * Perfil: <project>/.playwright-profiles/<profileKey>/
  */
 export async function getPersistentContext(profileKey: string): Promise<BrowserContext> {
-  const dir = path.join(os.tmpdir(), `playwright-profile-${profileKey}`);
-  fs.mkdirSync(dir, { recursive: true });
+  const dir = path.join(process.cwd(), '.playwright-profiles', profileKey);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-  const context = await chromium.launchPersistentContext(dir, {
+  const ctx = await chromium.launchPersistentContext(dir, {
     headless: true,
     args: CHROME_ARGS,
-    ...CONTEXT_OPTIONS,
+    userAgent:
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+      '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    viewport: { width: 1366, height: 768 },
+    locale: 'es-PE',
+    timezoneId: 'America/Lima',
+    extraHTTPHeaders: {
+      'Accept-Language': 'es-PE,es;q=0.9,en-US;q=0.8,en;q=0.7',
+    },
   });
-
-  await context.addInitScript(STEALTH_INIT_SCRIPT);
-
-  return context;
+  await ctx.addInitScript(STEALTH_INIT_SCRIPT);
+  return ctx;
 }
 
 export async function closeBrowser(): Promise<void> {

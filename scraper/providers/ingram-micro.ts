@@ -15,7 +15,6 @@ const BASE_URL = 'https://pe.ingrammicro.com';
 const LOGIN_URL = `${BASE_URL}/login`;
 const MAX_ITEMS = 150;
 
-// Rutas de categoría que se intentarán; si una falla o devuelve 0, se continúa con la siguiente
 const CATEGORY_PATHS = [
   '/search?category=laptops',
   '/search?category=desktops',
@@ -31,30 +30,28 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * Navega a una URL con reintentos automáticos para errores HTTP/2 transitorios
- * (ERR_HTTP2_PROTOCOL_ERROR, ERR_CONNECTION_RESET, etc.)
+ * Navega con reintentos automáticos para errores de red transitorios
+ * (ERR_HTTP2_PROTOCOL_ERROR, ERR_CONNECTION_RESET, etc.).
+ * CHROME_ARGS ya incluye --disable-http2 para forzar HTTP/1.1, pero por si acaso
+ * quedan errores puntuales de red en Docker reintentamos hasta maxAttempts veces.
  */
-async function retryGoto(
-  page: Page,
-  url: string,
-  maxAttempts = 3,
-): Promise<void> {
+async function retryGoto(page: Page, url: string, maxAttempts = 3, timeoutMs = 90000): Promise<void> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 35000 });
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
       return;
     } catch (err) {
       const msg = String(err);
       const isTransient =
-        msg.includes('ERR_HTTP2') ||
-        msg.includes('ERR_PROTOCOL') ||
-        msg.includes('ERR_CONNECTION') ||
-        msg.includes('ERR_NETWORK') ||
-        msg.includes('net::ERR');
-
+        msg.includes('ERR_HTTP2') || msg.includes('ERR_PROTOCOL') ||
+        msg.includes('ERR_CONNECTION') || msg.includes('ERR_NETWORK') ||
+        msg.includes('net::ERR') || msg.includes('Timeout');
       if (attempt < maxAttempts && isTransient) {
-        console.warn(`[Ingram Micro] Error de red en intento ${attempt}/${maxAttempts} para ${url}, reintentando en ${attempt * 3}s...`);
-        await delay(attempt * 3000);
+        console.warn(
+          `[Ingram Micro] Error de red en intento ${attempt}/${maxAttempts} para ${url}, ` +
+          `reintentando en ${attempt * 4}s...`
+        );
+        await delay(attempt * 4000);
       } else {
         throw err;
       }
@@ -82,11 +79,16 @@ export async function scrapeIngramMicro(jobId: string, options?: RunAllScrapersO
   let topLevelError: string | undefined;
 
   try {
-    // Login con retry para manejar HTTP/2 transitorios
-    await retryGoto(page, LOGIN_URL);
+    // Visitar la homepage primero para obtener cookies de sesión y evitar el rechazo directo al /login
+    await retryGoto(page, BASE_URL, 2, 60000).catch(() =>
+      console.warn('[Ingram Micro] Homepage no respondió, intentando login directo...')
+    );
+    await delay(2000);
+
+    await retryGoto(page, LOGIN_URL, 3, 90000);
     await delay(1500);
 
-    // Detectar campo de email/usuario con múltiples selectores
+    // Detectar campo de email con múltiples selectores — distintas versiones del portal
     const EMAIL_SELECTORS = [
       'input[name="email"]', '#email', 'input[type="email"]',
       'input[name="username"]', '#username', 'input[name="user"]',
@@ -96,7 +98,6 @@ export async function scrapeIngramMicro(jobId: string, options?: RunAllScrapersO
       if ((await page.locator(s).count()) > 0) { emailSel = s; break; }
     }
     if (emailSel) await page.fill(emailSel, user);
-
     await page.fill('input[type="password"]', pass);
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {}),
@@ -104,39 +105,34 @@ export async function scrapeIngramMicro(jobId: string, options?: RunAllScrapersO
     ]);
     await delay(2000);
 
-    // Scraping de categorías
     for (const catPath of CATEGORY_PATHS) {
       if (itemsFound >= MAX_ITEMS) break;
       try {
         await retryGoto(page, `${BASE_URL}${catPath}`);
         await delay(1500);
-        // Scroll para activar lazy-loading
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
         await delay(1000);
 
-        // Selectors genéricos que cubren grids de productos y tablas B2B
-        const PRODUCT_SELECTORS = [
+        const PRODUCT_SEL = [
           '.product-item', '[class*="product-card"]', '[class*="ProductCard"]',
           '[class*="search-result"]', '[data-product-id]', '[data-sku]',
           'tr[class*="product"]', 'tr[class*="item"]', 'li[class*="product"]',
         ].join(', ');
 
-        const products = await page.$$eval(
-          PRODUCT_SELECTORS,
-          (elements: Element[]) =>
-            elements.map((el) => {
-              const nameEl = el.querySelector(
-                '[class*="name"], [class*="title"], [class*="desc"], h2, h3, td:nth-child(2), .product-name'
-              ) as HTMLElement | null;
-              const anchor = el.querySelector('a[href]') as HTMLAnchorElement | null;
-              const img = el.querySelector('img') as HTMLImageElement | null;
-              return {
-                name: nameEl?.textContent?.trim() ?? anchor?.textContent?.trim() ?? '',
-                priceText: el.textContent?.trim() ?? '',
-                url: anchor?.href ?? '',
-                imageUrl: img?.src ?? '',
-              };
-            })
+        const products = await page.$$eval(PRODUCT_SEL, (elements: Element[]) =>
+          elements.map((el) => {
+            const nameEl = el.querySelector(
+              '[class*="name"], [class*="title"], [class*="desc"], h2, h3, td:nth-child(2)'
+            ) as HTMLElement | null;
+            const anchor = el.querySelector('a[href]') as HTMLAnchorElement | null;
+            const img = el.querySelector('img') as HTMLImageElement | null;
+            return {
+              name: nameEl?.textContent?.trim() ?? anchor?.textContent?.trim() ?? '',
+              priceText: el.textContent?.trim() ?? '',
+              url: anchor?.href ?? '',
+              imageUrl: img?.src ?? '',
+            };
+          })
         );
 
         for (const p of products) {
@@ -159,7 +155,7 @@ export async function scrapeIngramMicro(jobId: string, options?: RunAllScrapersO
 
     if (itemsFound === 0) {
       topLevelError =
-        'Ingram Micro: autenticado pero sin productos encontrados. ' +
+        'Ingram Micro: autenticado pero sin productos. ' +
         'Los selectores CSS pueden necesitar ajuste según la versión actual del portal.';
     }
   } catch (err) {
@@ -171,8 +167,5 @@ export async function scrapeIngramMicro(jobId: string, options?: RunAllScrapersO
   }
 
   await finalizeScrapeJob(jobId, itemsFound, topLevelError);
-  if (topLevelError && itemsFound === 0) {
-    throw new Error(topLevelError);
-  }
+  if (topLevelError && itemsFound === 0) throw new Error(topLevelError);
 }
-

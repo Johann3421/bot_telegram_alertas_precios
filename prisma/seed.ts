@@ -16,6 +16,8 @@ async function main() {
     { name: 'Impacto', type: ProviderType.MINORISTA, baseUrl: 'https://www.impacto.pe', requiresAuth: false },
     { name: 'Oechsle', type: ProviderType.MINORISTA, baseUrl: 'https://www.oechsle.pe', requiresAuth: false },
     { name: 'Sercoplus', type: ProviderType.MINORISTA, baseUrl: 'https://www.sercoplus.com', requiresAuth: false },
+    { name: 'MercadoLibre', type: ProviderType.MINORISTA, baseUrl: 'https://www.mercadolibre.com.pe', requiresAuth: false },
+    { name: 'Falabella', type: ProviderType.MINORISTA, baseUrl: 'https://www.falabella.com.pe', requiresAuth: false },
   ];
 
   for (const p of providers) {

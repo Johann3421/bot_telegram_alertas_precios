@@ -82,17 +82,26 @@ function buildRow(params: {
   };
 }
 
+const USD_TO_PEN = parseFloat(process.env.USD_TO_PEN_RATE ?? '3.75');
+
+function toNormalizedPen(listing: ListingCandidate): ListingCandidate {
+  if (listing.currency === 'USD') {
+    return { ...listing, price: parseFloat((listing.price * USD_TO_PEN).toFixed(2)), currency: 'PEN' };
+  }
+  return listing;
+}
+
 function latestListingsByProvider(listings: ListingCandidate[]): ListingCandidate[] {
   const sorted = [...listings].sort((left, right) => right.scrapedAt.getTime() - left.scrapedAt.getTime());
   const unique = new Map<string, ListingCandidate>();
 
   for (const listing of sorted) {
-    if (listing.currency !== 'PEN') {
+    if (listing.currency !== 'PEN' && listing.currency !== 'USD') {
       continue;
     }
 
     if (!unique.has(listing.providerId)) {
-      unique.set(listing.providerId, listing);
+      unique.set(listing.providerId, toNormalizedPen(listing));
     }
   }
 

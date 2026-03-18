@@ -11,6 +11,8 @@ import { scrapeIngramMicro } from './providers/ingram-micro';
 import { scrapeIntcomex } from './providers/intcomex';
 import { scrapeMaximaInternacional } from './providers/maxima-internacional';
 import { scrapeCompudiskett } from './providers/compudiskett';
+import { scrapeMercadoLibre } from './providers/mercadolibre';
+import { scrapeFalabella } from './providers/falabella';
 import { closeBrowser } from './core/browser';
 
 // Registrar todos los scrapers
@@ -23,6 +25,8 @@ registerScraper('Ingram Micro', scrapeIngramMicro);
 registerScraper('Intcomex', scrapeIntcomex);
 registerScraper('Maxima Internacional', scrapeMaximaInternacional);
 registerScraper('Compudiskett', scrapeCompudiskett);
+registerScraper('MercadoLibre', scrapeMercadoLibre);
+registerScraper('Falabella', scrapeFalabella);
 
 export { runAllScrapers, startScheduler, closeBrowser };
 

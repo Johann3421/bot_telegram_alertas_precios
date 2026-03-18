@@ -1,5 +1,5 @@
 import { getBrowser, getContext } from '../core/browser';
-import type { Page } from 'playwright';
+import type { Page, Frame } from 'playwright';
 import { prisma } from '@/lib/prisma';
 import {
   finalizeScrapeJob,
@@ -11,18 +11,22 @@ import { resolveWholesalerCredentials } from '../core/credentials';
 import type { RunAllScrapersOptions } from '../core/scheduler';
 
 const PROVIDER_NAME = 'Deltron';
-const BASE_URL = 'https://www.deltron.com.pe';
-const LOGIN_URL = `${BASE_URL}/modulos/productos/login.php`;
+// Portal B2B Xtranet — URL real confirmada en logs del VPS
+const BASE_URL = 'https://xpand.deltron.com.pe';
+const LOGIN_URL = `${BASE_URL}/login.php`;
 const MAX_ITEMS = 150;
 
+// Rutas de categoría tras login; cat= IDs son los del portal Xtranet.
+// Si alguna devuelve 0 items el loop continúa con la siguiente.
 const CATEGORY_PATHS = [
-  '/modulos/productos/items.php?cat=laptops',
-  '/modulos/productos/items.php?cat=monitores',
-  '/modulos/productos/items.php?cat=componentes',
-  '/modulos/productos/items.php?cat=almacenamiento',
-  '/modulos/productos/items.php?cat=tablets',
-  '/modulos/productos/items.php?cat=celulares',
-  '/modulos/productos/items.php?cat=perifericos',
+  '/xtranet/productos.php?cat=1',
+  '/xtranet/productos.php?cat=2',
+  '/xtranet/productos.php?cat=3',
+  '/xtranet/productos.php?cat=4',
+  '/xtranet/productos.php?cat=5',
+  '/xtranet/productos.php?cat=6',
+  '/xtranet/productos.php?cat=7',
+  '/xtranet/productos.php',         // listado general — fallback sin filtro
 ];
 
 function delay(ms: number): Promise<void> {
@@ -30,73 +34,139 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * Login flexible para Deltron.
- * Prueba múltiples selectores de campo de usuario en orden de prioridad
- * antes de caer en el primer input visible que no sea contraseña.
+ * Busca un selector tanto en el frame principal como en todos los iframes.
+ * Portales PHP clásicos suelen meter el formulario de login dentro de un <iframe>.
  */
+async function findInput(
+  page: Page,
+  selectors: string[],
+): Promise<{ frame: Frame; selector: string } | null> {
+  const frames = page.frames();
+  for (const selector of selectors) {
+    for (const frame of frames) {
+      try {
+        if ((await frame.locator(selector).count()) > 0) return { frame, selector };
+      } catch {
+        // Frame destruido mientras iteramos — ignorar
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Detecta y espera a que resuelva un challenge de Cloudflare (o similar WAF).
+ * CF renderiza una página sin <input>; hay que esperar a que el JS resuelva el reto
+ * antes de buscar el formulario de login.
+ */
+async function waitForCloudflare(page: Page): Promise<void> {
+  const title = await page.title().catch(() => '');
+  const isCF =
+    title.includes('Just a moment') ||
+    title.includes('Checking your browser') ||
+    title.includes('Please Wait') ||
+    (await page.locator('#challenge-form, #cf-challenge-running, .cf-browser-verification').count().catch(() => 0)) > 0;
+
+  if (isCF) {
+    console.warn('[Deltron] Cloudflare challenge detectado, esperando resolución (hasta 30s)...');
+    // Esperar a que desaparezca el título de CF y aparezca algún <input>
+    await page.waitForFunction(
+      () => !document.title.includes('Just a moment') && !document.title.includes('Checking'),
+      { timeout: 30000 }
+    ).catch(() => {});
+    await delay(3000);
+  }
+}
+
 async function loginDeltron(page: Page, user: string, pass: string): Promise<void> {
-  await page.goto(LOGIN_URL, { waitUntil: 'load', timeout: 45000 }).catch(async () => {
-    // Si la URL directa falla (redirect o error), intentar con la base
-    await page.goto(BASE_URL, { waitUntil: 'load', timeout: 45000 });
-  });
+  // Paso 1: visitar la HOME primero para obtener la cookie de sesión/CF clearance
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+  await waitForCloudflare(page);
+  await delay(1500);
 
-  await delay(2000);
+  // Paso 2: navegar al login con networkidle
+  await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(
+    async () => { await page.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}); }
+  );
+  await waitForCloudflare(page);
 
-  // Buscar campo de usuario con múltiples selectores en orden de prioridad
+  // Esperar activamente a que aparezca algún <input> (hasta 30s para portales JS lentos)
+  await page.waitForFunction(
+    () => document.querySelectorAll('input').length > 0,
+    { timeout: 30000 }
+  ).catch(() => {});
+  await delay(1000);
+
   const USER_SELECTORS = [
-    'input[name="usuario"]',
-    'input[name="user"]',
-    'input[name="login"]',
-    'input[name="usu"]',
-    'input[name="username"]',
-    'input[name="email"]',
-    '#usuario', '#user', '#login', '#username',
-    'input[type="email"]',
+    'input[name="usuario"]', 'input[name="usu"]',   'input[name="user"]',
+    'input[name="login"]',   'input[name="username"]', 'input[name="email"]',
+    '#usuario', '#usu', '#user', '#login', '#username',
+    'input[type="email"]',   'input[type="text"]',
   ];
 
-  let usernameSelector: string | null = null;
-  for (const sel of USER_SELECTORS) {
-    if ((await page.locator(sel).count()) > 0) {
-      usernameSelector = sel;
-      break;
+  const userField = await findInput(page, USER_SELECTORS);
+
+  if (!userField) {
+    // DIAGNÓSTICO: volcar todos los inputs en logs para identificar los selectores reales
+    const mainInputs = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('input')).map((el) => ({
+        name: (el as HTMLInputElement).name,
+        id: el.id,
+        type: (el as HTMLInputElement).type,
+        placeholder: (el as HTMLInputElement).placeholder,
+        visible: (el as HTMLInputElement).offsetParent !== null,
+      }))
+    );
+    const iframeInputs: unknown[] = [];
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      try {
+        const fi = await frame.evaluate(() =>
+          Array.from(document.querySelectorAll('input')).map((el) => ({
+            frameUrl: window.location.href,
+            name: (el as HTMLInputElement).name,
+            id: el.id,
+            type: (el as HTMLInputElement).type,
+          }))
+        );
+        iframeInputs.push(...fi);
+      } catch { /* frame descargado */ }
     }
+    console.error(
+      `[Deltron] DIAGNÓSTICO url=${page.url()} ` +
+      `mainInputs=${JSON.stringify(mainInputs)} ` +
+      `iframeInputs=${JSON.stringify(iframeInputs)}`
+    );
+    throw new Error(
+      `Deltron: no se encontró campo de usuario en ${page.url()}. ` +
+      `Revisa la línea [Deltron] DIAGNÓSTICO en los logs para ver los inputs disponibles.`
+    );
   }
 
-  if (!usernameSelector) {
-    // Fallback: primer input visible que no sea contraseña / botón / oculto
-    const genericInput = page.locator(
-      'input:not([type="password"]):not([type="submit"]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="button"])'
-    ).first();
-    const visible = await genericInput.isVisible().catch(() => false);
-    if (!visible) {
-      throw new Error(
-        `Deltron: no se encontró campo de usuario en ${page.url()}. ` +
-        `Verifica la URL de login y los selectores de formulario.`
-      );
-    }
-    await genericInput.fill(user);
-  } else {
-    await page.fill(usernameSelector, user);
-  }
+  await userField.frame.locator(userField.selector).first().fill(user);
 
-  // Contraseña
-  const passInput = page.locator('input[type="password"]').first();
-  await passInput.waitFor({ state: 'visible', timeout: 10000 });
-  await passInput.fill(pass);
+  const passField = await findInput(page, ['input[type="password"]']);
+  if (!passField) throw new Error('Deltron: no se encontró campo de contraseña.');
+  await passField.frame.locator('input[type="password"]').first().fill(pass);
 
-  // Enviar formulario
+  const SUBMIT_SELS = [
+    'button[type="submit"]', 'input[type="submit"]',
+    '.btn-login', 'button:has-text("Ingresar")',
+    'button:has-text("Entrar")', 'button:has-text("Login")',
+  ];
+  const submitField = await findInput(page, SUBMIT_SELS);
   await Promise.all([
     page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {}),
-    page.locator(
-      'button[type="submit"], input[type="submit"], .btn-login, ' +
-      'button:has-text("Ingresar"), button:has-text("Entrar"), button:has-text("Login")'
-    ).first().click(),
+    submitField
+      ? submitField.frame.locator(submitField.selector).first().click()
+      : userField.frame.locator(userField.selector).first().press('Enter'),
   ]);
   await delay(2000);
 
-  // Verificar que no seguimos en el form de login (campo de usuario ya no visible)
-  if (usernameSelector && (await page.locator(usernameSelector).count()) > 0) {
-    throw new Error('Deltron: inicio de sesión rechazado. Verifica usuario y contraseña.');
+  if (page.url().includes('login.php')) {
+    throw new Error(
+      'Deltron: inicio de sesión rechazado (URL sigue en login.php). Verifica usuario y contraseña.'
+    );
   }
 }
 
@@ -113,11 +183,8 @@ export async function scrapeDeltron(jobId: string, options?: RunAllScrapersOptio
   const context = await getContext(browser);
   const page = await context.newPage();
 
-  const provider = await prisma.provider.findFirst({
-    where: { name: PROVIDER_NAME },
-  });
+  const provider = await prisma.provider.findFirst({ where: { name: PROVIDER_NAME } });
   if (!provider) throw new Error(`Provider ${PROVIDER_NAME} no encontrado en DB`);
-
 
   let itemsFound = 0;
   let topLevelError: string | undefined;
@@ -134,7 +201,6 @@ export async function scrapeDeltron(jobId: string, options?: RunAllScrapersOptio
         });
         await delay(1000);
 
-        // Deltron usa tablas HTML clásicas para mostrar productos
         const rows = await page.$$eval(
           'table tr, tr.item, tr[class*="item"], tr[class*="product"], .product-row',
           (elements: Element[]) =>
@@ -143,18 +209,12 @@ export async function scrapeDeltron(jobId: string, options?: RunAllScrapersOptio
               const anchor = el.querySelector('a[href]') as HTMLAnchorElement | null;
               const img = el.querySelector('img') as HTMLImageElement | null;
               const allText = cells.map((c) => (c.textContent ?? '').trim()).join(' ');
-              // Nombre: primera celda con texto largo que no empiece con número
               const name =
                 cells.find((c) => {
                   const t = (c.textContent ?? '').trim();
                   return t.length > 6 && !/^\d/.test(t);
                 })?.textContent?.trim() ?? '';
-              return {
-                name,
-                priceText: allText,
-                url: anchor?.href ?? '',
-                imageUrl: img?.src ?? '',
-              };
+              return { name, priceText: allText, url: anchor?.href ?? '', imageUrl: img?.src ?? '' };
             })
         );
 
@@ -178,7 +238,8 @@ export async function scrapeDeltron(jobId: string, options?: RunAllScrapersOptio
 
     if (itemsFound === 0) {
       topLevelError =
-        'Deltron: autenticado pero sin productos parseables. Verifica que los selectores de tabla coincidan con el portal actual.';
+        'Deltron: autenticado pero sin productos parseables. ' +
+        'Verifica que los selectores de tabla coincidan con el portal Xtranet actual.';
     }
   } catch (err) {
     topLevelError = String(err);
@@ -189,7 +250,5 @@ export async function scrapeDeltron(jobId: string, options?: RunAllScrapersOptio
   }
 
   await finalizeScrapeJob(jobId, itemsFound, topLevelError);
-  if (topLevelError && itemsFound === 0) {
-    throw new Error(topLevelError);
-  }
+  if (topLevelError && itemsFound === 0) throw new Error(topLevelError);
 }

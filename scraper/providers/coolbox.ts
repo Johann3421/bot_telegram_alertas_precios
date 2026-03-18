@@ -52,8 +52,9 @@ export async function scrapeCoolbox(jobId: string): Promise<void> {
           (items) =>
             items.map((el) => ({
               name:
-                (el.querySelector('[class*="productBrand"]') as HTMLElement)?.textContent?.trim() ??
+                (el.querySelector('[class*="nameContainer"], [class*="productName"]') as HTMLElement)?.textContent?.trim() ??
                 (el.querySelector('a[aria-label]') as HTMLAnchorElement)?.getAttribute('aria-label')?.trim() ??
+                (el.querySelector('[class*="productBrand"]') as HTMLElement)?.textContent?.trim() ??
                 '',
               priceText:
                 (el.querySelector('[class*="sellingPrice"] [class*="currencyContainer"], [class*="currencyContainer"]') as HTMLElement)

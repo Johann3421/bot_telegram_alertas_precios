@@ -256,7 +256,7 @@ async function resolveProduct(rawName: string) {
       select: { id: true, canonicalName: true, sku: true },
     });
 
-    const JACCARD_THRESHOLD = 0.70;
+    const JACCARD_THRESHOLD = 0.60;
     let bestMatch: { id: string; score: number } | null = null;
 
     for (const p of samesBrandProducts) {
