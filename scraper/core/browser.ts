@@ -72,6 +72,9 @@ const STEALTH_INIT_SCRIPT = `
 
   // Ocultar Automation en headless Chrome
   Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 1 });
+
+  // Azure B2C verifica navigator.cookieEnabled; forzar a true
+  Object.defineProperty(navigator, 'cookieEnabled', { get: () => true });
 `;
 
 export async function getContext(browser: Browser): Promise<BrowserContext> {

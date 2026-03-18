@@ -3,13 +3,29 @@ import { prisma } from '@/lib/prisma';
 import { getRequiredUserSession } from '@/lib/session';
 import { getUserScraperCredentialMap } from '@/lib/wholesaler-credentials';
 
+// Jobs RUNNING con más de 45 min se consideran estancados
+const STALE_JOB_THRESHOLD_MS = 45 * 60 * 1000;
+
 export async function POST() {
   // Disparar scraping en background sin bloquear la respuesta
   // Se usa import dinámico para no cargar Playwright en el servidor Next
   try {
     const session = await getRequiredUserSession();
 
-    // Verificación básica: no ejecutar si ya hay un job corriendo
+    // Auto-limpiar jobs RUNNING estancados antes de verificar
+    await prisma.scrapeJob.updateMany({
+      where: {
+        status: 'RUNNING',
+        startedAt: { lt: new Date(Date.now() - STALE_JOB_THRESHOLD_MS) },
+      },
+      data: {
+        status: 'FAILED',
+        errors: 'Job estancado: limpiado automáticamente (>45 min sin finalizar)',
+        finishedAt: new Date(),
+      },
+    });
+
+    // Verificación básica: no ejecutar si ya hay un job corriendo (reciente)
     const runningJob = await prisma.scrapeJob.findFirst({
       where: { status: 'RUNNING' },
     });
