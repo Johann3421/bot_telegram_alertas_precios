@@ -1,3 +1,5 @@
+import { getCurrentComparisonForProduct } from '@/lib/comparison';
+
 interface DetailPageProps {
   searchParams: {
     productId?: string;
@@ -76,17 +78,23 @@ function InfoCard(props: {
   );
 }
 
-export default function ComparisonDetailPage({ searchParams }: DetailPageProps) {
-  const canonicalName = searchParams.canonicalName ?? 'Comparativa';
-  const category = searchParams.category ?? 'OTRO';
-  const sourceName = searchParams.sourceName ?? 'Proveedor base';
-  const targetName = searchParams.targetName ?? 'Proveedor comparado';
-  const sourceUrl = searchParams.sourceUrl ?? '#';
-  const targetUrl = searchParams.targetUrl ?? '#';
-  const sourceRawName = searchParams.sourceRawName ?? canonicalName;
-  const targetRawName = searchParams.targetRawName ?? canonicalName;
-  const marginPercent = Number(searchParams.marginPercent ?? '0');
-  const difference = Number(searchParams.difference ?? '0');
+export default async function ComparisonDetailPage({ searchParams }: DetailPageProps) {
+  const liveComparison = searchParams.productId
+    ? await getCurrentComparisonForProduct(searchParams.productId)
+    : null;
+
+  const canonicalName = liveComparison?.row.canonicalName ?? searchParams.canonicalName ?? 'Comparativa';
+  const category = liveComparison?.row.category ?? searchParams.category ?? 'OTRO';
+  const sourceName = liveComparison?.row.mayoristName ?? searchParams.sourceName ?? 'Proveedor base';
+  const targetName = liveComparison?.row.minoristaName ?? searchParams.targetName ?? 'Proveedor comparado';
+  const sourceUrl = liveComparison?.row.mayoristUrl ?? searchParams.sourceUrl ?? '#';
+  const targetUrl = liveComparison?.row.minoristaUrl ?? searchParams.targetUrl ?? '#';
+  const sourceRawName = liveComparison?.row.mayoristRawName ?? searchParams.sourceRawName ?? canonicalName;
+  const targetRawName = liveComparison?.row.minoristaRawName ?? searchParams.targetRawName ?? canonicalName;
+  const sourcePrice = liveComparison?.row.mayoristPrice?.toString() ?? searchParams.sourcePrice;
+  const targetPrice = liveComparison?.row.minoristaPrice?.toString() ?? searchParams.targetPrice;
+  const marginPercent = liveComparison?.row.marginPercent ?? Number(searchParams.marginPercent ?? '0');
+  const difference = liveComparison?.row.difference ?? Number(searchParams.difference ?? '0');
 
   return (
     <div style={{ padding: 24, display: 'grid', gap: 20 }}>
@@ -115,14 +123,14 @@ export default function ComparisonDetailPage({ searchParams }: DetailPageProps) 
         <InfoCard
           title="Proveedor base"
           provider={sourceName}
-          price={parseMoney(searchParams.sourcePrice)}
+          price={parseMoney(sourcePrice)}
           rawName={sourceRawName}
           url={sourceUrl}
         />
         <InfoCard
           title="Proveedor comparado"
           provider={targetName}
-          price={parseMoney(searchParams.targetPrice)}
+          price={parseMoney(targetPrice)}
           rawName={targetRawName}
           url={targetUrl}
         />

@@ -67,24 +67,91 @@ export function extractProductSku(rawName: string): string | null {
   return candidates[0] ?? null;
 }
 
+/**
+ * Devuelve hasta 3 candidatos de SKU ordenados por puntuación.
+ * Útil para buscar coincidencias alternativas cuando el SKU principal no está en DB.
+ */
+export function extractAllProductSkus(rawName: string): string[] {
+  const normalized = normalizeAsciiUpper(rawName);
+  const tokens = normalized.match(/[A-Z0-9-]{5,}/g) ?? [];
+
+  const candidates = Array.from(new Set(tokens))
+    .map(normalizeIdentifierToken)
+    .filter(Boolean)
+    .filter((token) => /[A-Z]/.test(token) && /\d/.test(token))
+    .filter((token) => token.length >= 5)
+    .filter((token) => !TECH_IDENTIFIER_BLACKLIST.has(token.replace(/-/g, '')))
+    .filter((token) => !isGenericChipModel(token))
+    .filter((token) => !isGenericCapacityToken(token))
+    .sort((left, right) => scoreIdentifierToken(right, normalized) - scoreIdentifierToken(left, normalized));
+
+  return candidates.slice(0, 3);
+}
+
+/**
+ * Tokens significativos para comparar nombres de productos.
+ * Filtra palabras genéricas, artículos y palabras cortas.
+ */
+const MATCH_STOP_WORDS = new Set([
+  'DE', 'DEL', 'LA', 'EL', 'LOS', 'LAS', 'CON', 'PARA', 'EN', 'Y', 'THE',
+  'WITH', 'AND', 'FOR', 'LAPTOP', 'NOTEBOOK', 'PC', 'SSD', 'RAM', 'HDD',
+  'MONITOR', 'TECLADO', 'MOUSE', 'DISCO', 'MEMORIA', 'PROCESADOR',
+  'COMPUTADORA', 'COMPUTADOR', 'EQUIPO', 'PORTATIL', 'PORTATILES',
+]);
+
+function meaningfulTokens(name: string): Set<string> {
+  return new Set(
+    name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length >= 3 && !MATCH_STOP_WORDS.has(t))
+  );
+}
+
+/**
+ * Similitud Jaccard entre dos nombres de producto (0..1).
+ * Un valor >= 0.6 sugiere que probablemente son el mismo producto.
+ */
+export function tokenJaccard(a: string, b: string): number {
+  const setA = meaningfulTokens(a);
+  const setB = meaningfulTokens(b);
+  if (setA.size === 0 && setB.size === 0) return 1;
+  let intersectionCount = 0;
+  setA.forEach((t) => { if (setB.has(t)) intersectionCount++; });
+  const unionSet = new Set<string>();
+  setA.forEach((t) => unionSet.add(t));
+  setB.forEach((t) => unionSet.add(t));
+  return unionSet.size === 0 ? 0 : intersectionCount / unionSet.size;
+}
+
 const BRANDS = [
   'ASUS', 'HP', 'DELL', 'LENOVO', 'ACER', 'MSI', 'SAMSUNG',
   'LG', 'INTEL', 'AMD', 'NVIDIA', 'SEAGATE', 'WD', 'KINGSTON',
   'LOGITECH', 'EPSON', 'CANON', 'XIAOMI', 'APPLE', 'TOSHIBA',
   'CORSAIR', 'RAZER', 'GIGABYTE', 'HUAWEI', 'SONY', 'TP-LINK',
-  'WESTERN DIGITAL', 'CRUCIAL', 'HIKVISION',
+  'WESTERN DIGITAL', 'CRUCIAL', 'HIKVISION', 'DAHUA', 'BENQ',
+  'VIEWSONIC', 'AOC', 'PHILIPS', 'TRANSCEND', 'PNY', 'SANDISK',
+  'PATRIOT', 'GSKILL', 'HYPERX', 'COOLER MASTER', 'NZXT', 'SEASONIC',
+  'EVGA', 'ZOTAC', 'PALIT', 'SAPPHIRE', 'BROTHER', 'LEXMARK',
+  'D-LINK', 'NETGEAR', 'UBIQUITI', 'MIKROTIK', 'HONEYWELL', 'ZEBRA',
+  'ANKER', 'BELKIN', 'TARGUS', 'GENIUS', 'A4TECH', 'REDRAGON',
+  'THERMALTAKE', 'FRACTAL', 'LIAN LI', 'DEEPCOOL',
 ];
 
 const CATEGORY_RULES: Record<string, string[]> = {
-  LAPTOP: ['LAPTOP', 'NOTEBOOK', 'VIVOBOOK', 'IDEAPAD', 'THINKPAD', 'PAVILION', 'INSPIRON', 'LATITUDE'],
-  DESKTOP: ['DESKTOP', 'PC', 'TORRE', 'ALL IN ONE', 'AIO'],
-  MONITOR: ['MONITOR', 'PANTALLA', 'DISPLAY'],
-  SMARTPHONE: ['CELULAR', 'SMARTPHONE', 'PHONE', 'IPHONE', 'GALAXY', 'REDMI'],
-  TABLET: ['TABLET', 'IPAD'],
-  COMPONENTE: ['PROCESADOR', 'CPU', 'GPU', 'RAM', 'MEMORIA', 'TARJETA DE VIDEO', 'MOTHERBOARD', 'PLACA MADRE', 'FUENTE DE PODER', 'DISCO DURO', 'SSD'],
-  PERIFERICO: ['TECLADO', 'MOUSE', 'RATON', 'AUDIFONO', 'HEADSET', 'WEBCAM', 'IMPRESORA', 'SCANNER'],
-  NETWORKING: ['ROUTER', 'SWITCH', 'ACCESS POINT', 'REPETIDOR', 'WIFI', 'CABLE RED'],
-  ALMACENAMIENTO: ['USB', 'PENDRIVE', 'DISCO EXTERNO', 'NAS', 'MEMORIA SD', 'MICRO SD'],
+  LAPTOP: ['LAPTOP', 'NOTEBOOK', 'VIVOBOOK', 'IDEAPAD', 'THINKPAD', 'THINKBOOK', 'PAVILION', 'INSPIRON', 'LATITUDE', 'ASPIRE', 'SWIFT', 'PREDATOR', 'ZENBOOK', 'PROBOOK', 'ELITEBOOK', 'CHROMEBOOK', 'ENVY', 'SPECTRE', 'OMEN LAPTOP'],
+  DESKTOP: ['DESKTOP', 'PC', 'TORRE', 'ALL IN ONE', 'AIO', 'OPTIPLEX', 'PRODESK', 'WORKSTATION'],
+  MONITOR: ['MONITOR', 'PANTALLA', 'DISPLAY', 'LED IPS', 'LED VA', 'LED TN'],
+  SMARTPHONE: ['CELULAR', 'SMARTPHONE', 'PHONE', 'IPHONE', 'GALAXY', 'REDMI', 'NOTE PRO', 'MOTO'],
+  TABLET: ['TABLET', 'IPAD', 'SURFACE GO', 'SURFACE PRO'],
+  COMPONENTE: ['PROCESADOR', 'CPU', 'GPU', 'RAM', 'MEMORIA', 'TARJETA DE VIDEO', 'MOTHERBOARD', 'PLACA MADRE', 'FUENTE DE PODER', 'DISCO DURO', 'SSD', 'M.2', 'NVME', 'DIMM', 'SODIMM'],
+  PERIFERICO: ['TECLADO', 'MOUSE', 'RATON', 'AUDIFONO', 'HEADSET', 'WEBCAM', 'IMPRESORA', 'SCANNER', 'GAMEPAD', 'JOYSTICK', 'MICROFONO'],
+  NETWORKING: ['ROUTER', 'SWITCH', 'ACCESS POINT', 'REPETIDOR', 'WIFI', 'CABLE RED', 'PATCH PANEL', 'FIREWALL', 'NVR'],
+  ALMACENAMIENTO: ['USB', 'PENDRIVE', 'DISCO EXTERNO', 'NAS', 'MEMORIA SD', 'MICRO SD', 'FLASH DRIVE'],
+  GAMING: ['OMEN', 'ROG', 'TUF GAMING', 'NITRO', 'HELIOS', 'LEGION', 'VICTUS'],
 };
 
 // Reglas heurísticas (sin costo de API)

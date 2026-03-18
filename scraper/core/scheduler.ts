@@ -19,6 +19,8 @@ interface ProviderScraper {
 const scrapers: ProviderScraper[] = [];
 
 export function registerScraper(name: string, fn: ScraperFn): void {
+  // Idempotente: evitar registros duplicados si el módulo se importa varias veces
+  if (scrapers.some((s) => s.name === name)) return;
   scrapers.push({ name, fn });
 }
 
@@ -63,7 +65,12 @@ export async function runAllScrapers(options?: RunAllScrapersOptions): Promise<v
 }
 
 // Programar ejecución cada N horas
+let schedulerStarted = false;
+
 export function startScheduler(): void {
+  if (schedulerStarted) return;
+  schedulerStarted = true;
+
   const hours = parseInt(process.env.SCRAPE_INTERVAL_HOURS ?? '3', 10);
   const cronExpr = `0 */${hours} * * *`;
 

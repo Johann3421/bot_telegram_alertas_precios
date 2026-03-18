@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
+  experimental: {
+    // Activa instrumentation.ts para iniciar el scheduler automáticamente
+    instrumentationHook: true,
+  },
   // No cargar Playwright ni scrapers en el bundle del cliente
   webpack: (config, { isServer }) => {
     if (!isServer) {

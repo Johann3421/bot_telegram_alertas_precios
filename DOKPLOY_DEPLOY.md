@@ -90,6 +90,10 @@ INGRAM_USER=
 INGRAM_PASS=
 INTCOMEX_USER=
 INTCOMEX_PASS=
+MAXIMA_USER=
+MAXIMA_PASS=
+COMPUDISKETT_USER=
+COMPUDISKETT_PASS=
 ```
 
 > **Importante:** `DATABASE_URL` **no** hay que definirla. El `compose.yml` la construye automáticamente usando las variables de Postgres de arriba.

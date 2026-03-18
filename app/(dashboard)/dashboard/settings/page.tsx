@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-type ProviderKey = 'DELTRON' | 'INGRAM' | 'INTCOMEX';
+const PROVIDER_KEYS = ['DELTRON', 'INGRAM', 'INTCOMEX', 'MAXIMA', 'COMPUDISKETT'] as const;
+type ProviderKey = (typeof PROVIDER_KEYS)[number];
 
 interface CredentialFormState {
   provider: ProviderKey;
@@ -43,6 +44,8 @@ export default function SettingsPage() {
     DELTRON: false,
     INGRAM: false,
     INTCOMEX: false,
+    MAXIMA: false,
+    COMPUDISKETT: false,
   });
 
   useEffect(() => {
@@ -195,7 +198,7 @@ export default function SettingsPage() {
           </div>
           <div className="settings-panel-body">
             <div className="settings-mini-stat">
-              <strong>{configuredCount}/3</strong>
+              <strong>{configuredCount}/{credentials.length || PROVIDER_KEYS.length}</strong>
               <span>Mayoristas con acceso listo</span>
             </div>
             <div className="settings-mini-stat" style={{ borderLeftColor: 'var(--color-positive)' }}>

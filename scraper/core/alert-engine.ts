@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { sendTelegramAlert } from '@/lib/telegram';
+import { buildComparisonSelectionForProduct } from '@/lib/comparison';
 
 const MIN_MARGIN_PERCENT = parseFloat(process.env.MIN_MARGIN_PERCENT ?? '15');
 
@@ -7,41 +8,50 @@ export async function runAlertEngine(): Promise<number> {
   console.log('[AlertEngine] Analizando márgenes...');
   let alertsCreated = 0;
 
-  // Obtener últimos listings de mayoristas con producto asignado
-  const mayoristListings = await prisma.rawListing.findMany({
+  const products = await prisma.product.findMany({
     where: {
-      provider: { type: 'MAYORISTA' },
-      productId: { not: null },
-      inStock: true,
+      isActive: true,
     },
-    include: { product: true, provider: true },
-    orderBy: { scrapedAt: 'desc' },
+    select: {
+      id: true,
+      canonicalName: true,
+      category: true,
+      imageUrl: true,
+      rawListings: {
+        where: { inStock: true },
+        select: {
+          productId: true,
+          price: true,
+          currency: true,
+          scrapedAt: true,
+          providerId: true,
+          rawName: true,
+          url: true,
+          provider: {
+            select: {
+              name: true,
+              type: true,
+            },
+          },
+        },
+        orderBy: { scrapedAt: 'desc' },
+      },
+    },
   });
 
-  for (const mayListing of mayoristListings) {
-    if (!mayListing.productId) continue;
+  for (const product of products) {
+    const selection = buildComparisonSelectionForProduct(product as never, 'WHOLESALE_VS_RETAIL');
+    if (!selection) continue;
 
-    // Buscar equivalente minorista más reciente
-    const minListing = await prisma.rawListing.findFirst({
-      where: {
-        productId: mayListing.productId,
-        provider: { type: 'MINORISTA' },
-        inStock: true,
-      },
-      include: { provider: true },
-      orderBy: { scrapedAt: 'desc' },
-    });
-
-    if (!minListing) continue;
-
-    const margin =
-      ((minListing.price - mayListing.price) / mayListing.price) * 100;
+    const { row, sourceListing, targetListing } = selection;
+    const margin = row.marginPercent;
 
     if (margin >= MIN_MARGIN_PERCENT) {
-      // Evitar duplicar alertas en las últimas 6 horas
       const recentAlert = await prisma.alert.findFirst({
         where: {
-          productId: mayListing.productId,
+          productId: product.id,
+          mayoristId: row.mayoristProviderId,
+          minoristaId: row.minoristaProviderId,
           createdAt: { gte: new Date(Date.now() - 6 * 60 * 60 * 1000) },
         },
       });
@@ -50,19 +60,37 @@ export async function runAlertEngine(): Promise<number> {
 
       const alert = await prisma.alert.create({
         data: {
-          productId: mayListing.productId,
-          mayoristPrice: mayListing.price,
-          minoristaPrice: minListing.price,
-          marginPercent: Math.round(margin * 100) / 100,
-          mayoristId: mayListing.providerId,
-          minoristaId: minListing.providerId,
+          productId: product.id,
+          mayoristPrice: row.mayoristPrice,
+          minoristaPrice: row.minoristaPrice,
+          marginPercent: row.marginPercent,
+          mayoristId: row.mayoristProviderId,
+          minoristaId: row.minoristaProviderId,
         },
       });
 
       await sendTelegramAlert(
         alert,
-        { ...mayListing, product: mayListing.product },
-        minListing
+        {
+          ...sourceListing,
+          price: row.mayoristPrice,
+          url: row.mayoristUrl,
+          rawName: row.mayoristRawName,
+          product: {
+            canonicalName: product.canonicalName,
+            imageUrl: product.imageUrl,
+          },
+        },
+        {
+          ...targetListing,
+          price: row.minoristaPrice,
+          url: row.minoristaUrl,
+          rawName: row.minoristaRawName,
+          product: {
+            canonicalName: product.canonicalName,
+            imageUrl: product.imageUrl,
+          },
+        }
       );
 
       alertsCreated++;

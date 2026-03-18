@@ -169,4 +169,6 @@ enum WholesalerProvider {
   DELTRON
   INGRAM
   INTCOMEX
+  MAXIMA
+  COMPUDISKETT
 }

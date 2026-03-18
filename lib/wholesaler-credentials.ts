@@ -23,6 +23,16 @@ export const WHOLESALER_PROVIDERS: Array<{
     label: 'Intcomex',
     hint: 'Sesión empresarial para portal de productos y precios.',
   },
+  {
+    key: 'MAXIMA',
+    label: 'Maxima Internacional',
+    hint: 'Acceso B2B para precio, stock y catálogo autenticado.',
+  },
+  {
+    key: 'COMPUDISKETT',
+    label: 'Compudiskett',
+    hint: 'Portal ecommerce empresarial con precios visibles tras iniciar sesión.',
+  },
 ];
 
 export async function getUserCredentialSettings(userId: string) {

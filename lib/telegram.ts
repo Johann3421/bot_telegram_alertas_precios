@@ -11,6 +11,7 @@ interface AlertWithRelations {
 interface ListingWithProvider {
   price: number;
   url: string;
+  rawName?: string;
   provider: { name: string };
   product?: { canonicalName: string; imageUrl?: string | null } | null;
 }
@@ -84,10 +85,12 @@ export async function sendTelegramAlert(
     `💰 <b>Diferencia estimada:</b> S/ ${difference.toFixed(2)}`,
     '',
     `🏭 <b>${escapeHtml(mayListing.provider.name)}:</b> S/ ${mayListing.price.toFixed(2)}`,
+    mayListing.rawName ? `   ${escapeHtml(mayListing.rawName)}` : null,
     `🏪 <b>${escapeHtml(minListing.provider.name)}:</b> S/ ${minListing.price.toFixed(2)}`,
+    minListing.rawName ? `   ${escapeHtml(minListing.rawName)}` : null,
     '',
     `🕒 ${new Date().toLocaleString('es-PE', { timeZone: 'America/Lima' })}`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   const buttons: Array<Array<{ text: string; url: string }>> = [];
 
@@ -152,7 +155,7 @@ export async function sendTelegramAlert(
 
     await prisma.alert.update({
       where: { id: alert.id },
-      data: { sentToTelegram: true, status: 'SENT' },
+      data: { sentToTelegram: true },
     });
   } catch (error) {
     console.error('[Telegram] Error enviando alerta:', error);

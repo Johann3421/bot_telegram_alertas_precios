@@ -9,6 +9,8 @@ import { scrapeOechsle } from './providers/oechsle';
 import { scrapeDeltron } from './providers/deltron';
 import { scrapeIngramMicro } from './providers/ingram-micro';
 import { scrapeIntcomex } from './providers/intcomex';
+import { scrapeMaximaInternacional } from './providers/maxima-internacional';
+import { scrapeCompudiskett } from './providers/compudiskett';
 import { closeBrowser } from './core/browser';
 
 // Registrar todos los scrapers
@@ -19,6 +21,8 @@ registerScraper('Oechsle', scrapeOechsle);
 registerScraper('Deltron', scrapeDeltron);
 registerScraper('Ingram Micro', scrapeIngramMicro);
 registerScraper('Intcomex', scrapeIntcomex);
+registerScraper('Maxima Internacional', scrapeMaximaInternacional);
+registerScraper('Compudiskett', scrapeCompudiskett);
 
 export { runAllScrapers, startScheduler, closeBrowser };
 

@@ -1,6 +1,6 @@
 import { Category, RawListing } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { extractProductSku, quickNormalize } from './normalizer';
+import { extractProductSku, extractAllProductSkus, tokenJaccard, quickNormalize } from './normalizer';
 
 interface ScrapedItemInput {
   providerId: string;
@@ -191,9 +191,11 @@ export function toAbsoluteMediaUrl(baseUrl: string, candidateUrl?: string): stri
 }
 
 async function resolveProduct(rawName: string) {
-  const normalized = quickNormalize(rawName);
   const rawLabel = rawName.trim().replace(/\s+/g, ' ');
-  const sku = extractProductSku(rawLabel);
+  // Extrae todos los candidatos de SKU para maximizar coincidencias
+  const allSkus = extractAllProductSkus(rawLabel);
+  const sku = allSkus[0] ?? extractProductSku(rawLabel);
+  const normalized = quickNormalize(rawLabel);
   const brand = normalized.brand && normalized.brand !== 'UNKNOWN'
     ? normalized.brand.trim()
     : fallbackBrand(rawLabel);
@@ -210,16 +212,19 @@ async function resolveProduct(rawName: string) {
     : buildFallbackCanonicalName(rawLabel, brand);
   const category = normalizeCategory(normalized.category);
 
-  if (sku) {
-    const skuProduct = await prisma.product.findUnique({
-      where: { sku },
-    });
-
+  // 1️⃣ Búsqueda exacta por cualquiera de los SKU candidatos
+  for (const candidateSku of allSkus) {
+    const skuProduct = await prisma.product.findUnique({ where: { sku: candidateSku } });
     if (skuProduct) {
+      // Actualizar SKU principal si el producto no lo tenía
+      if (!skuProduct.sku) {
+        return prisma.product.update({ where: { id: skuProduct.id }, data: { sku: candidateSku } });
+      }
       return skuProduct;
     }
   }
 
+  // 2️⃣ Búsqueda por nombre canónico / brand+model exacto
   const existingProduct = await prisma.product.findFirst({
     where: hasStrongNormalizedIdentity(canonicalName, brand, model)
       ? {
@@ -238,15 +243,42 @@ async function resolveProduct(rawName: string) {
 
   if (existingProduct) {
     if (sku && !existingProduct.sku) {
-      return prisma.product.update({
-        where: { id: existingProduct.id },
-        data: { sku },
-      });
+      return prisma.product.update({ where: { id: existingProduct.id }, data: { sku } });
     }
-
     return existingProduct;
   }
 
+  // 3️⃣ Búsqueda por similitud Jaccard (evita duplicados con nombres ligeramente distintos)
+  // Solo comparar productos de la misma marca para limitar el espacio de búsqueda
+  if (brand !== 'UNKNOWN') {
+    const samesBrandProducts = await prisma.product.findMany({
+      where: { brand: { equals: brand, mode: 'insensitive' } },
+      select: { id: true, canonicalName: true, sku: true },
+    });
+
+    const JACCARD_THRESHOLD = 0.70;
+    let bestMatch: { id: string; score: number } | null = null;
+
+    for (const p of samesBrandProducts) {
+      const score = tokenJaccard(rawLabel, p.canonicalName);
+      if (score >= JACCARD_THRESHOLD && (!bestMatch || score > bestMatch.score)) {
+        bestMatch = { id: p.id, score };
+      }
+    }
+
+    if (bestMatch) {
+      // Producto muy similar encontrado: no crear duplicado
+      if (sku) {
+        const existing = await prisma.product.findUnique({ where: { id: bestMatch.id } });
+        if (existing && !existing.sku) {
+          return prisma.product.update({ where: { id: bestMatch.id }, data: { sku } });
+        }
+      }
+      return prisma.product.findUniqueOrThrow({ where: { id: bestMatch.id } });
+    }
+  }
+
+  // 4️⃣ Crear producto nuevo
   return prisma.product.create({
     data: {
       canonicalName,

@@ -44,6 +44,10 @@ services:
       INGRAM_PASS: ${INGRAM_PASS:-}
       INTCOMEX_USER: ${INTCOMEX_USER:-}
       INTCOMEX_PASS: ${INTCOMEX_PASS:-}
+      MAXIMA_USER: ${MAXIMA_USER:-}
+      MAXIMA_PASS: ${MAXIMA_PASS:-}
+      COMPUDISKETT_USER: ${COMPUDISKETT_USER:-}
+      COMPUDISKETT_PASS: ${COMPUDISKETT_PASS:-}
     ports:
       - ${APP_PORT:-3308}:3000
     healthcheck:
@@ -85,6 +89,10 @@ services:
       INGRAM_PASS: ${INGRAM_PASS:-}
       INTCOMEX_USER: ${INTCOMEX_USER:-}
       INTCOMEX_PASS: ${INTCOMEX_PASS:-}
+      MAXIMA_USER: ${MAXIMA_USER:-}
+      MAXIMA_PASS: ${MAXIMA_PASS:-}
+      COMPUDISKETT_USER: ${COMPUDISKETT_USER:-}
+      COMPUDISKETT_PASS: ${COMPUDISKETT_PASS:-}
     command: ["bash", "docker/start-worker.sh"]
 
 volumes:

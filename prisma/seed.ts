@@ -9,6 +9,8 @@ async function main() {
     { name: 'Deltron', type: ProviderType.MAYORISTA, baseUrl: 'https://www.deltron.com.pe', requiresAuth: true },
     { name: 'Ingram Micro', type: ProviderType.MAYORISTA, baseUrl: 'https://www.ingrammicro.com', requiresAuth: true },
     { name: 'Intcomex', type: ProviderType.MAYORISTA, baseUrl: 'https://www.intcomex.com', requiresAuth: true },
+    { name: 'Maxima Internacional', type: ProviderType.MAYORISTA, baseUrl: 'https://www.maximainternacional.com.pe', requiresAuth: true },
+    { name: 'Compudiskett', type: ProviderType.MAYORISTA, baseUrl: 'https://ecommerce.compudiskett.com.pe', requiresAuth: true },
     { name: 'Coolbox', type: ProviderType.MINORISTA, baseUrl: 'https://www.coolbox.pe', requiresAuth: false },
     { name: 'Hiraoka', type: ProviderType.MINORISTA, baseUrl: 'https://www.hiraoka.com.pe', requiresAuth: false },
     { name: 'Impacto', type: ProviderType.MINORISTA, baseUrl: 'https://www.impacto.pe', requiresAuth: false },

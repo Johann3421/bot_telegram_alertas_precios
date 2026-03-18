@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 interface AlertCardProps {
   alert: {
     id: string;
@@ -132,22 +134,41 @@ export function AlertCard({ alert, onDismiss }: AlertCardProps) {
       </div>
 
       {/* Acción */}
-      {onDismiss && alert.status === 'PENDING' && (
-        <button
-          onClick={() => onDismiss(alert.id)}
+      <div style={{ display: 'grid', gap: 6, flexShrink: 0 }}>
+        <Link
+          href={`/dashboard/comparison-detail?productId=${encodeURIComponent(alert.productId)}`}
           style={{
             height: 24,
             padding: '0 8px',
-            background: 'var(--bg-tertiary)',
+            background: 'var(--cell-alert-low)',
             border: '1px solid var(--border-color)',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-accent)',
             fontSize: 10,
-            flexShrink: 0,
+            textDecoration: 'none',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
-          Descartar
-        </button>
-      )}
+          Detalle
+        </Link>
+
+        {onDismiss && alert.status === 'PENDING' && (
+          <button
+            onClick={() => onDismiss(alert.id)}
+            style={{
+              height: 24,
+              padding: '0 8px',
+              background: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text-secondary)',
+              fontSize: 10,
+            }}
+          >
+            Descartar
+          </button>
+        )}
+      </div>
     </div>
   );
 }
