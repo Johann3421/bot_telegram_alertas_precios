@@ -1,4 +1,4 @@
-import { getBrowser, getContext } from '../core/browser';
+import { getPersistentContext } from '../core/browser';
 import type { Page } from 'playwright';
 import { prisma } from '@/lib/prisma';
 import {
@@ -180,8 +180,9 @@ export async function scrapeIntcomex(jobId: string, options?: RunAllScrapersOpti
     throw new Error('Credenciales INTCOMEX_USER/INTCOMEX_PASS no configuradas');
   }
 
-  const browser = await getBrowser();
-  const context = await getContext(browser);
+  // Usar contexto persistente para que las cookies de Azure B2C sobrevivan
+  // los redirects cross-domain (store.intcomex.com ↔ b2clogin.com)
+  const context = await getPersistentContext('intcomex');
   const page = await context.newPage();
 
   const provider = await prisma.provider.findFirst({

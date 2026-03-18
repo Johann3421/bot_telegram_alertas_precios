@@ -1,4 +1,37 @@
 import { chromium, Browser, BrowserContext } from 'playwright';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+// Argumentos Chrome compartidos por todas las instancias
+const CHROME_ARGS = [
+  '--no-sandbox',
+  '--disable-setuid-sandbox',
+  '--disable-blink-features=AutomationControlled',
+  '--disable-infobars',
+  '--disable-dev-shm-usage',
+  '--disable-renderer-backgrounding',
+  '--disable-background-timer-throttling',
+  '--disable-backgrounding-occluded-windows',
+  '--disable-ipc-flooding-protection',
+  // Fix Azure B2C / portales OAuth: deshabilitar restricciones SameSite para cookies cross-origin
+  '--disable-features=VizDisplayCompositor,SameSiteByDefaultCookies,CookiesWithoutSameSiteMustBeSecure',
+  '--enable-features=NetworkService,NetworkServiceLogging',
+  '--window-size=1366,768',
+];
+
+// Opciones del contexto compartidas
+const CONTEXT_OPTIONS = {
+  userAgent:
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+    '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  viewport: { width: 1366, height: 768 } as const,
+  locale: 'es-PE',
+  timezoneId: 'America/Lima',
+  extraHTTPHeaders: {
+    'Accept-Language': 'es-PE,es;q=0.9,en-US;q=0.8,en;q=0.7',
+  },
+};
 
 let browserInstance: Browser | null = null;
 
@@ -6,19 +39,7 @@ export async function getBrowser(): Promise<Browser> {
   if (!browserInstance || !browserInstance.isConnected()) {
     browserInstance = await chromium.launch({
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-infobars',
-        '--disable-dev-shm-usage',
-        '--disable-renderer-backgrounding',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-ipc-flooding-protection',
-        '--disable-features=VizDisplayCompositor',
-        '--window-size=1366,768',
-      ],
+      args: CHROME_ARGS,
     });
   }
   return browserInstance;
@@ -78,16 +99,27 @@ const STEALTH_INIT_SCRIPT = `
 `;
 
 export async function getContext(browser: Browser): Promise<BrowserContext> {
-  const context = await browser.newContext({
-    userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-      '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    viewport: { width: 1366, height: 768 },
-    locale: 'es-PE',
-    timezoneId: 'America/Lima',
-    extraHTTPHeaders: {
-      'Accept-Language': 'es-PE,es;q=0.9,en-US;q=0.8,en;q=0.7',
-    },
+  const context = await browser.newContext(CONTEXT_OPTIONS);
+
+  await context.addInitScript(STEALTH_INIT_SCRIPT);
+
+  return context;
+}
+
+/**
+ * Crea un contexto persistente con perfil en disco temporal.
+ * Necesario para portales con OAuth/SSO (ej. Azure B2C) donde las cookies
+ * deben sobrevivir redirecciones cross-domain en entornos Docker/VPS.
+ * Retorna el contexto; al llamar context.close() se cierra también el browser subyacente.
+ */
+export async function getPersistentContext(profileKey: string): Promise<BrowserContext> {
+  const dir = path.join(os.tmpdir(), `playwright-profile-${profileKey}`);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const context = await chromium.launchPersistentContext(dir, {
+    headless: true,
+    args: CHROME_ARGS,
+    ...CONTEXT_OPTIONS,
   });
 
   await context.addInitScript(STEALTH_INIT_SCRIPT);
