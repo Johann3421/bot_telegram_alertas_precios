@@ -1,5 +1,6 @@
 import { getBrowser, getContext } from '../core/browser';
 import type { Page, Frame } from 'playwright';
+import { buildCookieHeader, loadRenderedPage } from '../core/remote-render';
 import { prisma } from '@/lib/prisma';
 import {
   finalizeScrapeJob,
@@ -188,6 +189,9 @@ export async function scrapeDeltron(jobId: string, options?: RunAllScrapersOptio
 
   let itemsFound = 0;
   let topLevelError: string | undefined;
+  const backendSet = new Set<string>(['playwright']);
+  let pagesAttempted = 0;
+  let pagesSucceeded = 0;
 
   try {
     await loginDeltron(page, user, pass);
@@ -195,11 +199,18 @@ export async function scrapeDeltron(jobId: string, options?: RunAllScrapersOptio
     for (const catPath of CATEGORY_PATHS) {
       if (itemsFound >= MAX_ITEMS) break;
       try {
-        await page.goto(`${BASE_URL}${catPath}`, {
-          waitUntil: 'domcontentloaded',
-          timeout: 30000,
+        pagesAttempted++;
+        const targetUrl = `${BASE_URL}${catPath}`;
+        const cookieHeader = await buildCookieHeader(page, targetUrl);
+        const backend = await loadRenderedPage(page, targetUrl, {
+          providerName: PROVIDER_NAME,
+          waitForSelector: 'table tr, tr.item, tr[class*="item"], tr[class*="product"], .product-row',
+          timeoutMs: 65000,
+          scrollSteps: 2,
+          headers: cookieHeader ? { Cookie: cookieHeader } : undefined,
         });
-        await delay(1000);
+        backendSet.add(backend);
+        pagesSucceeded++;
 
         const rows = await page.$$eval(
           'table tr, tr.item, tr[class*="item"], tr[class*="product"], .product-row',
@@ -249,6 +260,11 @@ export async function scrapeDeltron(jobId: string, options?: RunAllScrapersOptio
     await context.close();
   }
 
-  await finalizeScrapeJob(jobId, itemsFound, topLevelError);
+  await finalizeScrapeJob(jobId, itemsFound, topLevelError, {
+    backendUsed: Array.from(backendSet).join(','),
+    strategyUsed: 'hybrid-auth-remote-catalog',
+    pagesAttempted,
+    pagesSucceeded,
+  });
   if (topLevelError && itemsFound === 0) throw new Error(topLevelError);
 }

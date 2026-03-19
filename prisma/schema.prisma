@@ -119,6 +119,10 @@ model ScrapeJob {
   startedAt  DateTime?
   finishedAt DateTime?
   itemsFound Int       @default(0)
+  backendUsed String?
+  strategyUsed String?
+  pagesAttempted Int   @default(0)
+  pagesSucceeded Int   @default(0)
   errors     String?
   createdAt  DateTime  @default(now())
 

@@ -1,5 +1,6 @@
 import { getBrowser, getContext } from '../core/browser';
 import type { Page } from 'playwright';
+import { buildCookieHeader, loadRenderedPage } from '../core/remote-render';
 import { prisma } from '@/lib/prisma';
 import {
   finalizeScrapeJob,
@@ -77,6 +78,9 @@ export async function scrapeIngramMicro(jobId: string, options?: RunAllScrapersO
 
   let itemsFound = 0;
   let topLevelError: string | undefined;
+  const backendSet = new Set<string>(['playwright']);
+  let pagesAttempted = 0;
+  let pagesSucceeded = 0;
 
   try {
     // Visitar la homepage primero para obtener cookies de sesión y evitar el rechazo directo al /login
@@ -108,10 +112,18 @@ export async function scrapeIngramMicro(jobId: string, options?: RunAllScrapersO
     for (const catPath of CATEGORY_PATHS) {
       if (itemsFound >= MAX_ITEMS) break;
       try {
-        await retryGoto(page, `${BASE_URL}${catPath}`);
-        await delay(1500);
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
-        await delay(1000);
+        pagesAttempted++;
+        const targetUrl = `${BASE_URL}${catPath}`;
+        const cookieHeader = await buildCookieHeader(page, targetUrl);
+        const backend = await loadRenderedPage(page, targetUrl, {
+          providerName: PROVIDER_NAME,
+          waitForSelector: '.product-item, [class*="product-card"], [class*="ProductCard"], [class*="search-result"], [data-product-id], [data-sku], tr[class*="product"], tr[class*="item"], li[class*="product"]',
+          timeoutMs: 70000,
+          scrollSteps: 3,
+          headers: cookieHeader ? { Cookie: cookieHeader } : undefined,
+        });
+        backendSet.add(backend);
+        pagesSucceeded++;
 
         const PRODUCT_SEL = [
           '.product-item', '[class*="product-card"]', '[class*="ProductCard"]',
@@ -166,6 +178,11 @@ export async function scrapeIngramMicro(jobId: string, options?: RunAllScrapersO
     await context.close();
   }
 
-  await finalizeScrapeJob(jobId, itemsFound, topLevelError);
+  await finalizeScrapeJob(jobId, itemsFound, topLevelError, {
+    backendUsed: Array.from(backendSet).join(','),
+    strategyUsed: 'hybrid-auth-remote-catalog',
+    pagesAttempted,
+    pagesSucceeded,
+  });
   if (topLevelError && itemsFound === 0) throw new Error(topLevelError);
 }

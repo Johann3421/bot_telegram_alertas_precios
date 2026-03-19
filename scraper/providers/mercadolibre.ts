@@ -6,6 +6,7 @@
  * y extract product cards del DOM.
  */
 import { getBrowser, getContext } from '../core/browser';
+import { loadRenderedPage } from '../core/remote-render';
 import { prisma } from '@/lib/prisma';
 import {
   finalizeScrapeJob,
@@ -30,10 +31,6 @@ const CATEGORY_PATHS = [
   '/redes-computacion',
 ];
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export async function scrapeMercadoLibre(jobId: string): Promise<void> {
   const provider = await prisma.provider.findFirst({
     where: { name: PROVIDER_NAME },
@@ -46,24 +43,24 @@ export async function scrapeMercadoLibre(jobId: string): Promise<void> {
 
   let itemsFound = 0;
   const categoryErrors: string[] = [];
+  const backendSet = new Set<string>();
+  let pagesAttempted = 0;
+  let pagesSucceeded = 0;
 
   try {
     for (const catPath of CATEGORY_PATHS) {
       if (itemsFound >= MAX_ITEMS) break;
 
       try {
-        await page.goto(`${BASE_URL}${catPath}`, {
-          waitUntil: 'domcontentloaded',
-          timeout: 40000,
+        pagesAttempted++;
+        const backend = await loadRenderedPage(page, `${BASE_URL}${catPath}`, {
+          providerName: PROVIDER_NAME,
+          waitForSelector: '.ui-search-layout__item, [class*="search-results-item"]',
+          timeoutMs: 70000,
+          scrollSteps: 5,
         });
-
-        // Esperar a que aparezcan los ítems de búsqueda
-        await page.waitForSelector(
-          '.ui-search-layout__item, [class*="search-results-item"]',
-          { timeout: 20000 }
-        ).catch(() => {});
-
-        await delay(800);
+        backendSet.add(backend);
+        pagesSucceeded++;
 
         const products = await page.$$eval(
           '.ui-search-layout__item, [class*="search-results-item"]',
@@ -104,15 +101,18 @@ export async function scrapeMercadoLibre(jobId: string): Promise<void> {
           itemsFound++;
           if (itemsFound >= MAX_ITEMS) break;
         }
-
-        await delay(1200);
       } catch (catError) {
         console.error(`[MercadoLibre] Error en categoría ${catPath}:`, catError);
         categoryErrors.push(`${catPath}: ${String(catError)}`);
       }
     }
   } catch (error) {
-    await finalizeScrapeJob(jobId, itemsFound, String(error));
+    await finalizeScrapeJob(jobId, itemsFound, String(error), {
+      backendUsed: Array.from(backendSet).join(','),
+      strategyUsed: 'remote-public-catalog',
+      pagesAttempted,
+      pagesSucceeded,
+    });
     throw error;
   } finally {
     await page.close();
@@ -122,7 +122,13 @@ export async function scrapeMercadoLibre(jobId: string): Promise<void> {
   await finalizeScrapeJob(
     jobId,
     itemsFound,
-    categoryErrors.length > 0 && itemsFound === 0 ? categoryErrors.join(' | ') : undefined
+    categoryErrors.length > 0 && itemsFound === 0 ? categoryErrors.join(' | ') : undefined,
+    {
+      backendUsed: Array.from(backendSet).join(','),
+      strategyUsed: 'remote-public-catalog',
+      pagesAttempted,
+      pagesSucceeded,
+    }
   );
 }
 

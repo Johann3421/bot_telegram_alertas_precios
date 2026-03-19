@@ -1,5 +1,5 @@
-import { Page } from 'playwright';
 import { getBrowser, getContext } from '../core/browser';
+import { loadRenderedPage } from '../core/remote-render';
 import { prisma } from '@/lib/prisma';
 import {
   detectCurrencyCode,
@@ -21,10 +21,6 @@ const CATEGORIES_TO_SCRAPE = [
   '/catalogo?categoria=Tarjetas%20de%20Video&c=15',
 ];
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export async function scrapeImpacto(jobId: string): Promise<void> {
   const browser = await getBrowser();
   const context = await getContext(browser);
@@ -37,17 +33,22 @@ export async function scrapeImpacto(jobId: string): Promise<void> {
 
   let itemsFound = 0;
   const categoryErrors: string[] = [];
+  const backendSet = new Set<string>();
+  let pagesAttempted = 0;
+  let pagesSucceeded = 0;
 
   try {
     for (const categoryPath of CATEGORIES_TO_SCRAPE) {
       try {
-        await page.goto(`${BASE_URL}${categoryPath}`, {
-          waitUntil: 'domcontentloaded',
-          timeout: 30000,
+        pagesAttempted++;
+        const backend = await loadRenderedPage(page, `${BASE_URL}${categoryPath}`, {
+          providerName: PROVIDER_NAME,
+          waitForSelector: '.single-product',
+          timeoutMs: 65000,
+          scrollSteps: 4,
         });
-
-        await delay(1000);
-        await autoScroll(page);
+        backendSet.add(backend);
+        pagesSucceeded++;
 
         const products = await page.$$eval(
           '.single-product',
@@ -87,7 +88,12 @@ export async function scrapeImpacto(jobId: string): Promise<void> {
       }
     }
   } catch (error) {
-    await finalizeScrapeJob(jobId, itemsFound, String(error));
+    await finalizeScrapeJob(jobId, itemsFound, String(error), {
+      backendUsed: Array.from(backendSet).join(','),
+      strategyUsed: 'remote-public-catalog',
+      pagesAttempted,
+      pagesSucceeded,
+    });
     throw error;
   } finally {
     await page.close();
@@ -97,24 +103,12 @@ export async function scrapeImpacto(jobId: string): Promise<void> {
   await finalizeScrapeJob(
     jobId,
     itemsFound,
-    categoryErrors.length > 0 && itemsFound === 0 ? categoryErrors.join(' | ') : undefined
+    categoryErrors.length > 0 && itemsFound === 0 ? categoryErrors.join(' | ') : undefined,
+    {
+      backendUsed: Array.from(backendSet).join(','),
+      strategyUsed: 'remote-public-catalog',
+      pagesAttempted,
+      pagesSucceeded,
+    }
   );
-}
-
-async function autoScroll(page: Page): Promise<void> {
-  await page.evaluate(async () => {
-    await new Promise<void>((resolve) => {
-      let totalHeight = 0;
-      const distance = 300;
-      const maxHeight = 15000;
-      const timer = setInterval(() => {
-        window.scrollBy(0, distance);
-        totalHeight += distance;
-        if (totalHeight >= document.body.scrollHeight || totalHeight >= maxHeight) {
-          clearInterval(timer);
-          resolve();
-        }
-      }, 150);
-    });
-  });
 }

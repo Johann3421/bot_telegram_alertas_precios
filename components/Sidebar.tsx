@@ -11,6 +11,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useScrapeStatus } from '@/components/ScrapeStatusProvider';
 
 const MENU_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutGrid },
@@ -24,6 +25,7 @@ const MENU_ITEMS = [
 export function Sidebar({ user }: { user: { name: string; email: string } }) {
   const pathname = usePathname();
   const [alertCount, setAlertCount] = useState(0);
+  const scrapeStatus = useScrapeStatus();
 
   useEffect(() => {
     fetch('/api/stats')
@@ -126,6 +128,60 @@ export function Sidebar({ user }: { user: { name: string; email: string } }) {
           );
         })}
       </nav>
+
+      {/* Estado del scraping */}
+      <div
+        style={{
+          padding: '10px 16px',
+          borderTop: '1px solid rgba(255,255,255,0.1)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
+        <span
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            background: scrapeStatus.isRunning ? '#ED7D31' : 'rgba(240,240,240,0.4)',
+            boxShadow: scrapeStatus.isRunning ? '0 0 0 3px rgba(237,125,49,0.2)' : 'none',
+            flexShrink: 0,
+          }}
+        />
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: scrapeStatus.isRunning ? '#ED7D31' : 'rgba(240,240,240,0.5)',
+              fontFamily: 'var(--font-ui)',
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {scrapeStatus.isRunning
+              ? `Scraping: ${scrapeStatus.runningJob?.provider ?? '…'}`
+              : 'Sin scraping'}
+          </div>
+          {scrapeStatus.isRunning && scrapeStatus.runningJob && (
+            <div
+              style={{
+                fontSize: 10,
+                color: 'rgba(240,240,240,0.4)',
+                fontFamily: 'var(--font-ui)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {scrapeStatus.runningJob.itemsFound} items
+              {scrapeStatus.runningJob.pagesAttempted > 0
+                ? ` · ${scrapeStatus.runningJob.pagesSucceeded}/${scrapeStatus.runningJob.pagesAttempted} pág.`
+                : ''}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Footer del sidebar */}
       <div

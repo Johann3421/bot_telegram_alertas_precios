@@ -3,8 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { getRequiredUserSession } from '@/lib/session';
 import { getUserScraperCredentialMap } from '@/lib/wholesaler-credentials';
 
-// Jobs RUNNING con más de 45 min se consideran estancados
-const STALE_JOB_THRESHOLD_MS = 45 * 60 * 1000;
+// Jobs RUNNING con más de 20 min se consideran estancados
+const STALE_JOB_THRESHOLD_MS = 20 * 60 * 1000;
 
 export async function POST() {
   // Disparar scraping en background sin bloquear la respuesta
@@ -28,11 +28,28 @@ export async function POST() {
     // Verificación básica: no ejecutar si ya hay un job corriendo (reciente)
     const runningJob = await prisma.scrapeJob.findFirst({
       where: { status: 'RUNNING' },
+      orderBy: { startedAt: 'desc' },
+      include: { provider: true },
     });
 
     if (runningJob) {
       return NextResponse.json(
-        { message: 'Ya hay un scraping en ejecución', jobId: runningJob.id },
+        {
+          message: `Ya hay un scraping en ejecución${runningJob.provider ? ` con ${runningJob.provider.name}` : ''}`,
+          jobId: runningJob.id,
+          runningJob: {
+            jobId: runningJob.id,
+            provider: runningJob.provider.name,
+            startedAt: runningJob.startedAt,
+            itemsFound: runningJob.itemsFound,
+            backendUsed: runningJob.backendUsed,
+            strategyUsed: runningJob.strategyUsed,
+            elapsedSeconds: Math.max(
+              0,
+              Math.floor((Date.now() - runningJob.startedAt.getTime()) / 1000)
+            ),
+          },
+        },
         { status: 409 }
       );
     }

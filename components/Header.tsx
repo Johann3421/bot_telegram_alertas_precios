@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { LogOut } from 'lucide-react';
 import { signOut } from 'next-auth/react';
+import { useScrapeStatus } from '@/components/ScrapeStatusProvider';
 
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard': 'Comparador de Precios',
@@ -13,13 +14,27 @@ const PAGE_TITLES: Record<string, string> = {
   '/dashboard/settings': 'Configuración',
 };
 
+function formatElapsed(elapsedSeconds: number) {
+  if (elapsedSeconds < 60) {
+    return `${elapsedSeconds}s`;
+  }
+
+  const hours = Math.floor(elapsedSeconds / 3600);
+  const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  return `${minutes} min`;
+}
+
 export function Header({ user }: { user: { name: string; email: string } }) {
   const pathname = usePathname();
   const title = PAGE_TITLES[pathname] ?? 'Dashboard';
   const initial = (user.name || user.email || 'U').charAt(0).toUpperCase();
-
-  return (
-    <header
+  const scrapeStatus = useScrapeStatus();
+  return (    <header
       style={{
         height: 'var(--header-height)',
         background: 'var(--bg-header)',
@@ -43,6 +58,56 @@ export function Header({ user }: { user: { name: string; email: string } }) {
       </h1>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '6px 10px',
+            borderRadius: 999,
+            background: scrapeStatus?.isRunning ? 'rgba(237, 125, 49, 0.18)' : 'rgba(255,255,255,0.12)',
+            border: scrapeStatus?.isRunning
+              ? '1px solid rgba(237, 125, 49, 0.45)'
+              : '1px solid rgba(255,255,255,0.18)',
+            minWidth: 0,
+          }}
+        >
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: scrapeStatus?.isRunning ? 'var(--color-warning)' : 'rgba(240,240,240,0.7)',
+              boxShadow: scrapeStatus?.isRunning ? '0 0 0 4px rgba(237, 125, 49, 0.12)' : 'none',
+              flexShrink: 0,
+            }}
+          />
+          <span
+            style={{
+              fontSize: 11,
+              color: 'var(--text-on-dark)',
+              fontFamily: 'var(--font-ui)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {scrapeStatus?.isRunning ? 'Scraping activo' : 'Sin scraping activo'}
+          </span>
+          {scrapeStatus?.isRunning && scrapeStatus.runningJob && (
+            <span
+              style={{
+                fontSize: 11,
+                color: 'rgba(240,240,240,0.78)',
+                fontFamily: 'var(--font-ui)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {scrapeStatus.runningJob.provider} · {formatElapsed(scrapeStatus.runningJob.elapsedSeconds)}
+              {scrapeStatus.runningJob.pagesAttempted > 0
+                ? ` · pág. ${scrapeStatus.runningJob.pagesSucceeded}/${scrapeStatus.runningJob.pagesAttempted}`
+                : ''}
+            </span>
+          )}
+        </div>
         <span
           style={{
             fontSize: 11,

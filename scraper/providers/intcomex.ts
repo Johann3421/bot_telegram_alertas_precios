@@ -1,5 +1,6 @@
 import { getPersistentContext } from '../core/browser';
 import type { Page } from 'playwright';
+import { buildCookieHeader, loadRenderedPage } from '../core/remote-render';
 import { prisma } from '@/lib/prisma';
 import {
   detectCurrencyCode,
@@ -136,12 +137,24 @@ async function extractItemsFromPage(page: Page): Promise<CandidateItem[]> {
   );
 }
 
-async function collectCandidates(page: Page): Promise<CandidateItem[]> {
+async function collectCandidates(
+  page: Page,
+  metrics: { backends: Set<string>; pagesAttempted: number; pagesSucceeded: number }
+): Promise<CandidateItem[]> {
   const deduped = new Map<string, CandidateItem>();
 
   // Primera pasada: home page
-  await page.goto(HOME_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
-  await delay(2000);
+  metrics.pagesAttempted += 1;
+  const homeCookieHeader = await buildCookieHeader(page, HOME_URL);
+  const homeBackend = await loadRenderedPage(page, HOME_URL, {
+    providerName: PROVIDER_NAME,
+    waitForSelector: 'a[href*="/Product/Detail/"], a[href*="/Product/"]',
+    timeoutMs: 70000,
+    scrollSteps: 4,
+    headers: homeCookieHeader ? { Cookie: homeCookieHeader } : undefined,
+  });
+  metrics.backends.add(homeBackend);
+  metrics.pagesSucceeded += 1;
 
   for (const item of await extractItemsFromPage(page)) {
     if (!deduped.has(item.url)) deduped.set(item.url, item);
@@ -151,14 +164,17 @@ async function collectCandidates(page: Page): Promise<CandidateItem[]> {
   for (const catUrl of CATEGORY_URLS) {
     if (deduped.size >= MAX_ITEMS) break;
     try {
-      await page.goto(catUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await delay(1500);
-
-      // Scroll para cargar lazy-loaded products
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
-      await delay(1000);
-      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-      await delay(1500);
+      metrics.pagesAttempted += 1;
+      const cookieHeader = await buildCookieHeader(page, catUrl);
+      const backend = await loadRenderedPage(page, catUrl, {
+        providerName: PROVIDER_NAME,
+        waitForSelector: 'a[href*="/Product/Detail/"], a[href*="/Product/"]',
+        timeoutMs: 70000,
+        scrollSteps: 4,
+        headers: cookieHeader ? { Cookie: cookieHeader } : undefined,
+      });
+      metrics.backends.add(backend);
+      metrics.pagesSucceeded += 1;
 
       for (const item of await extractItemsFromPage(page)) {
         if (!deduped.has(item.url)) deduped.set(item.url, item);
@@ -191,11 +207,17 @@ export async function scrapeIntcomex(jobId: string, options?: RunAllScrapersOpti
 
   let itemsFound = 0;
   let topLevelError: string | undefined;
+  const backends = new Set<string>(['playwright']);
+  let pagesAttempted = 0;
+  let pagesSucceeded = 0;
 
   try {
     await authenticate(page, user, pass);
 
-    const candidates = await collectCandidates(page);
+    const metrics = { backends, pagesAttempted, pagesSucceeded };
+    const candidates = await collectCandidates(page, metrics);
+    pagesAttempted = metrics.pagesAttempted;
+    pagesSucceeded = metrics.pagesSucceeded;
 
     for (const item of candidates) {
       const currency = detectCurrencyCode(item.priceText);
@@ -237,7 +259,12 @@ export async function scrapeIntcomex(jobId: string, options?: RunAllScrapersOpti
     await context.close();
   }
 
-  await finalizeScrapeJob(jobId, itemsFound, topLevelError);
+  await finalizeScrapeJob(jobId, itemsFound, topLevelError, {
+    backendUsed: Array.from(backends).join(','),
+    strategyUsed: 'hybrid-auth-remote-catalog',
+    pagesAttempted,
+    pagesSucceeded,
+  });
 
   if (topLevelError) {
     throw new Error(topLevelError);

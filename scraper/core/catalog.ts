@@ -352,7 +352,13 @@ export async function upsertScrapedListing(input: ScrapedItemInput): Promise<Raw
 export async function finalizeScrapeJob(
   jobId: string,
   itemsFound: number,
-  errorMessage?: string
+  errorMessage?: string,
+  metrics?: {
+    backendUsed?: string;
+    strategyUsed?: string;
+    pagesAttempted?: number;
+    pagesSucceeded?: number;
+  }
 ): Promise<void> {
   const failed = Boolean(errorMessage) || itemsFound === 0;
 
@@ -362,6 +368,10 @@ export async function finalizeScrapeJob(
       status: failed ? 'FAILED' : 'DONE',
       finishedAt: new Date(),
       itemsFound,
+      backendUsed: metrics?.backendUsed,
+      strategyUsed: metrics?.strategyUsed,
+      pagesAttempted: metrics?.pagesAttempted ?? 0,
+      pagesSucceeded: metrics?.pagesSucceeded ?? 0,
       errors: failed ? errorMessage ?? 'No se encontraron productos validos para este proveedor' : null,
     },
   });

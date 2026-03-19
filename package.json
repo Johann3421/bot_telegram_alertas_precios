@@ -14,6 +14,7 @@
     "db:studio": "npx prisma studio",
     "db:generate": "npx prisma generate",
     "scrape": "npx tsx scraper/index.ts",
+    "scrape:smoke": "npx tsx scripts/smoke_remote_backends.ts",
     "playwright:install": "npx playwright install chromium"
   },
   "prisma": {

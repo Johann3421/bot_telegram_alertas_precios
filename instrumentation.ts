@@ -17,6 +17,8 @@ export async function register() {
     const { scrapeIntcomex } = await import('./scraper/providers/intcomex');
     const { scrapeMaximaInternacional } = await import('./scraper/providers/maxima-internacional');
     const { scrapeCompudiskett } = await import('./scraper/providers/compudiskett');
+    const { scrapeMercadoLibre } = await import('./scraper/providers/mercadolibre');
+    const { scrapeFalabella } = await import('./scraper/providers/falabella');
 
     registerScraper('Hiraoka', scrapeHiraoka);
     registerScraper('Coolbox', scrapeCoolbox);
@@ -27,6 +29,8 @@ export async function register() {
     registerScraper('Intcomex', scrapeIntcomex);
     registerScraper('Maxima Internacional', scrapeMaximaInternacional);
     registerScraper('Compudiskett', scrapeCompudiskett);
+    registerScraper('MercadoLibre', scrapeMercadoLibre);
+    registerScraper('Falabella', scrapeFalabella);
 
     startScheduler();
 

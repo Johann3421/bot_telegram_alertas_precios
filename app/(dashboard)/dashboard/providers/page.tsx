@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useScrapeStatus } from '@/components/ScrapeStatusProvider';
 
 interface ProviderStat {
   id: string;
@@ -9,6 +10,12 @@ interface ProviderStat {
   isActive: boolean;
   listings: number;
   jobs: number;
+  successRate: number;
+  lastBackend: string;
+  lastStrategy: string;
+  lastItemsFound: number;
+  pagesSucceeded: number;
+  pagesAttempted: number;
 }
 
 interface StatsData {
@@ -21,12 +28,15 @@ interface StatsData {
     status: string;
     finishedAt: string | null;
     itemsFound: number;
+    backendUsed?: string | null;
+    strategyUsed?: string | null;
   } | null;
   providers: ProviderStat[];
 }
 
 export default function ProvidersPage() {
   const [stats, setStats] = useState<StatsData | null>(null);
+  const scrapeStatus = useScrapeStatus();
 
   useEffect(() => {
     fetch('/api/stats')
@@ -64,6 +74,50 @@ export default function ProvidersPage() {
 
   return (
     <div style={{ padding: 16 }}>
+      {/* Banner de scraping activo */}
+      {scrapeStatus.isRunning && scrapeStatus.runningJob && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '10px 16px',
+            marginBottom: 12,
+            background: 'rgba(237,125,49,0.1)',
+            border: '1px solid rgba(237,125,49,0.3)',
+            borderLeft: '4px solid #ED7D31',
+            fontFamily: 'var(--font-ui)',
+            fontSize: 12,
+          }}
+        >
+          <span
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: '#ED7D31',
+              boxShadow: '0 0 0 4px rgba(237,125,49,0.2)',
+              flexShrink: 0,
+            }}
+          />
+          <span style={{ fontWeight: 700, color: '#ED7D31' }}>Scraping en curso</span>
+          <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+            {scrapeStatus.runningJob.provider}
+          </span>
+          <span style={{ color: 'var(--text-secondary)' }}>
+            {scrapeStatus.runningJob.itemsFound} items
+          </span>
+          {scrapeStatus.runningJob.pagesAttempted > 0 && (
+            <span style={{ color: 'var(--text-secondary)' }}>
+              · páginas {scrapeStatus.runningJob.pagesSucceeded}/{scrapeStatus.runningJob.pagesAttempted}
+            </span>
+          )}
+          <span style={{ color: 'var(--text-muted)', fontSize: 11, marginLeft: 'auto' }}>
+            Actualiza automáticamente cada 3 s
+          </span>
+        </div>
+      )}
+
       {/* Resumen general */}
       <div
         style={{
@@ -127,6 +181,12 @@ export default function ProvidersPage() {
           <span style={{ fontFamily: 'var(--font-data)', color: 'var(--text-secondary)' }}>
             {stats.lastScrape.itemsFound} items
           </span>
+          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+            backend: {stats.lastScrape.backendUsed || '-'}
+          </span>
+          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+            estrategia: {stats.lastScrape.strategyUsed || '-'}
+          </span>
           {stats.lastScrape.finishedAt && (
             <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
               {new Date(stats.lastScrape.finishedAt).toLocaleString('es-PE')}
@@ -145,6 +205,10 @@ export default function ProvidersPage() {
             <th style={headerStyle}>Estado</th>
             <th style={headerStyle}>Listings</th>
             <th style={headerStyle}>Jobs ejecutados</th>
+            <th style={headerStyle}>Exito 10 jobs</th>
+            <th style={headerStyle}>Backend ultimo</th>
+            <th style={headerStyle}>Ultimo items</th>
+            <th style={headerStyle}>Paginas ok</th>
           </tr>
         </thead>
         <tbody>
@@ -180,6 +244,10 @@ export default function ProvidersPage() {
               </td>
               <td style={{ ...cellStyle, textAlign: 'center', fontFamily: 'var(--font-data)' }}>{p.listings}</td>
               <td style={{ ...cellStyle, textAlign: 'center', fontFamily: 'var(--font-data)' }}>{p.jobs}</td>
+              <td style={{ ...cellStyle, textAlign: 'center', fontFamily: 'var(--font-data)' }}>{p.successRate}%</td>
+              <td style={{ ...cellStyle, textAlign: 'center', fontSize: 11 }}>{p.lastBackend}</td>
+              <td style={{ ...cellStyle, textAlign: 'center', fontFamily: 'var(--font-data)' }}>{p.lastItemsFound}</td>
+              <td style={{ ...cellStyle, textAlign: 'center', fontFamily: 'var(--font-data)' }}>{p.pagesSucceeded}/{p.pagesAttempted}</td>
             </tr>
           ))}
         </tbody>

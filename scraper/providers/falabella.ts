@@ -4,8 +4,8 @@
  *
  * URL base: https://www.falabella.com.pe/falabella-pe/category/<CAT_ID>-<CAT_NAME>
  */
-import { type Page } from 'playwright';
 import { getBrowser, getContext } from '../core/browser';
+import { loadRenderedPage } from '../core/remote-render';
 import { prisma } from '@/lib/prisma';
 import {
   finalizeScrapeJob,
@@ -28,28 +28,6 @@ const CATEGORY_PATHS = [
   '/falabella-pe/category/cat4470028-Impresoras',
 ];
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function autoScroll(page: Page): Promise<void> {
-  await page.evaluate(async () => {
-    await new Promise<void>((resolve) => {
-      let totalHeight = 0;
-      const distance = 400;
-      const maxHeight = 20000;
-      const timer = setInterval(() => {
-        window.scrollBy(0, distance);
-        totalHeight += distance;
-        if (totalHeight >= document.body.scrollHeight || totalHeight >= maxHeight) {
-          clearInterval(timer);
-          resolve();
-        }
-      }, 180);
-    });
-  });
-}
-
 export async function scrapeFalabella(jobId: string): Promise<void> {
   const provider = await prisma.provider.findFirst({
     where: { name: PROVIDER_NAME },
@@ -62,30 +40,27 @@ export async function scrapeFalabella(jobId: string): Promise<void> {
 
   let itemsFound = 0;
   const categoryErrors: string[] = [];
+  const backendSet = new Set<string>();
+  let pagesAttempted = 0;
+  let pagesSucceeded = 0;
 
   try {
     for (const catPath of CATEGORY_PATHS) {
       if (itemsFound >= MAX_ITEMS) break;
 
       try {
-        await page.goto(`${BASE_URL}${catPath}`, {
-          waitUntil: 'domcontentloaded',
-          timeout: 45000,
+        pagesAttempted++;
+        const backend = await loadRenderedPage(page, `${BASE_URL}${catPath}`, {
+          providerName: PROVIDER_NAME,
+          waitForSelector: 'a[href*="/falabella-pe/product/"]',
+          timeoutMs: 70000,
+          scrollSteps: 6,
         });
-
-        // Esperar a que carguen los pods de producto (renderizado client-side)
-        await page
-          .waitForSelector('[class*="pod-"], [class*="search-results-4-grid"]', {
-            timeout: 25000,
-          })
-          .catch(() => {});
-
-        await delay(1500);
-        await autoScroll(page);
-        await delay(1000);
+        backendSet.add(backend);
+        pagesSucceeded++;
 
         const products = await page.$$eval(
-          '[class*="pod-link"], a[href*="/falabella-pe/product/"]',
+          'a[href*="/falabella-pe/product/"]',
           (anchors) => {
             const seen = new Set<string>();
             return anchors
@@ -131,15 +106,18 @@ export async function scrapeFalabella(jobId: string): Promise<void> {
           itemsFound++;
           if (itemsFound >= MAX_ITEMS) break;
         }
-
-        await delay(1200);
       } catch (catError) {
         console.error(`[Falabella] Error en categoría ${catPath}:`, catError);
         categoryErrors.push(`${catPath}: ${String(catError)}`);
       }
     }
   } catch (error) {
-    await finalizeScrapeJob(jobId, itemsFound, String(error));
+    await finalizeScrapeJob(jobId, itemsFound, String(error), {
+      backendUsed: Array.from(backendSet).join(','),
+      strategyUsed: 'remote-public-catalog',
+      pagesAttempted,
+      pagesSucceeded,
+    });
     throw error;
   } finally {
     await page.close();
@@ -149,6 +127,12 @@ export async function scrapeFalabella(jobId: string): Promise<void> {
   await finalizeScrapeJob(
     jobId,
     itemsFound,
-    categoryErrors.length > 0 && itemsFound === 0 ? categoryErrors.join(' | ') : undefined
+    categoryErrors.length > 0 && itemsFound === 0 ? categoryErrors.join(' | ') : undefined,
+    {
+      backendUsed: Array.from(backendSet).join(','),
+      strategyUsed: 'remote-public-catalog',
+      pagesAttempted,
+      pagesSucceeded,
+    }
   );
 }
